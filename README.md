@@ -44,3 +44,4 @@ Aplicación web monolítica desarrollada en **Go** (sin dependencias externas pe
    - Verifica la dirección exacta y código postal de origen en **Bello, Antioquia** (`051050`).
 3. Revisa `internal/skydropx/client.go` para ajustar los campos exactos del payload JSON según la versión de API habilitada en tu cuenta (cotización + selección de tarifa Interrapidísimo + emisión de etiqueta).
 # skydropx-automator
+# skydropx-automator
