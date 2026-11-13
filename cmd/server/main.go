@@ -42,6 +42,12 @@ func main() {
 		}
 		go tgBot.Run(context.Background())
 		log.Printf("Bot de Telegram activo (chats autorizados: %v)", cfg.TelegramAllowedChatIDs)
+
+		if cfg.SkydropxWebhookSecret != "" {
+			mux.HandleFunc("POST "+auth.WebhookPath, tgBot.WebhookHandler(cfg.SkydropxWebhookSecret, cfg.SkydropxWebhookHeader))
+			log.Printf("Webhook de Skydropx activo en %s", auth.WebhookPath)
+			log.Println("Webhook de Skydropx desactivado: SKYDROPX_WEBHOOK_SECRET no está configurado (se revisan guías cada GUIA_CHECK_MINUTES).")
+		}
 	} else {
 		log.Println("Bot de Telegram desactivado: TELEGRAM_BOT_TOKEN no está configurado.")
 	}

@@ -15,6 +15,9 @@ import (
 	"time"
 )
 
+// WebhookPath es la ruta donde Skydropx envía sus eventos.
+const WebhookPath = "/api/webhooks/skydropx"
+
 const (
 	cookieName = "sd_session"
 	sessionTTL = 12 * time.Hour
@@ -82,10 +85,11 @@ func (g *Guard) setCookie(w http.ResponseWriter, r *http.Request, value string, 
 	})
 }
 
-// Wrap exige sesión para todo excepto /login.
+// Wrap exige sesión para todo excepto /login, /logout y el webhook de Skydropx.
 func (g *Guard) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !g.Enabled() || r.URL.Path == "/login" || r.URL.Path == "/logout" || g.isAuthenticated(r) {
+		// El webhook de Skydropx no tiene sesión: se valida con su propia firma en el handler.
+		if !g.Enabled() || r.URL.Path == "/login" || r.URL.Path == "/logout" || r.URL.Path == WebhookPath || g.isAuthenticated(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

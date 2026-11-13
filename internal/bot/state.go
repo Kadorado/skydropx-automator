@@ -87,6 +87,17 @@ func (s *State) setOffset(offset int64) error {
 	return s.save()
 }
 
+func (s *State) isPending(orderID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, p := range s.Pending {
+		if p.OrderID == orderID {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *State) snapshotPending() []Pending {
 	s.mu.Lock()
 	defer s.mu.Unlock()

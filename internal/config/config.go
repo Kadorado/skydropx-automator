@@ -14,6 +14,10 @@ type Config struct {
 	SkydropxClientID     string // OAuth client_id (Conexiones > API en Skydropx)
 	SkydropxClientSecret string // OAuth client_secret
 
+	// Webhook de Skydropx (Conexiones > Webhooks): clave HMAC o token Bearer, y nombre del encabezado.
+	SkydropxWebhookSecret string
+	SkydropxWebhookHeader string
+
 	OriginName           string
 	OriginCompany        string
 	OriginStreet         string
@@ -53,9 +57,12 @@ func Load() Config {
 		SkydropxClientID:     getEnv("SKYDROPX_CLIENT_ID", ""),
 		SkydropxClientSecret: getEnv("SKYDROPX_CLIENT_SECRET", ""),
 
+		SkydropxWebhookSecret: getEnv("SKYDROPX_WEBHOOK_SECRET", ""),
+		SkydropxWebhookHeader: getEnv("SKYDROPX_WEBHOOK_HEADER", "Authorization"),
+
 		// Origen: dirección verificada de la sucursal Belu Store en Skydropx (ID sucursal 232574).
 		OriginName:           getEnv("ORIGIN_NAME", "Kevin Dorado"),
-		OriginCompany:        getEnv("ORIGIN_COMPANY", "belu store"),
+		OriginCompany:        getEnv("ORIGIN_COMPANY", "belu"),
 		OriginStreet:         getEnv("ORIGIN_STREET", "CL 24A N57A 84"),
 		OriginInternalNumber: getEnv("ORIGIN_INTERNAL_NUMBER", "502"),
 		OriginReference:      getEnv("ORIGIN_REFERENCE", "apto 502 edificio montecarlo"),

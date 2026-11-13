@@ -26,6 +26,8 @@ services:
         sync: false
       - key: SKYDROPX_CLIENT_SECRET
         sync: false
+      - key: SKYDROPX_WEBHOOK_SECRET
+        sync: false
       - key: APP_PASSWORD
         sync: false
       - key: TELEGRAM_BOT_TOKEN

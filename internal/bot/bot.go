@@ -10,6 +10,7 @@ import (
 	"html"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"skydropx-automator/internal/domain"
@@ -33,6 +34,8 @@ type Bot struct {
 	tg   *telegram.Client
 	sky  *skydropx.Client
 	st   *State
+
+	checkMu sync.Mutex // evita que el webhook y la revisión periódica avisen dos veces la misma guía
 }
 
 func New(opts Options, sky *skydropx.Client) (*Bot, error) {
@@ -189,19 +192,32 @@ func (b *Bot) checkGuias(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		// La orden dice qué envíos tiene; cuando el envío ya tiene guía, se avisa y se quita de pendientes.
+		b.checkPending(ctx, p, nil)
+	}
+}
+
+// checkPending avisa la guía de una orden pendiente si ya la tiene y la quita de pendientes.
+// Si shipmentIDs viene vacío, se consultan los envíos de la orden en Skydropx.
+func (b *Bot) checkPending(ctx context.Context, p Pending, shipmentIDs []string) {
+	b.checkMu.Lock()
+	defer b.checkMu.Unlock()
+	if !b.st.isPending(p.OrderID) {
+		return // ya se avisó (por el webhook o por la revisión periódica)
+	}
+	if len(shipmentIDs) == 0 {
 		ids, err := b.sky.OrderShipmentIDs(ctx, p.OrderID)
 		if err != nil {
 			if !errors.Is(err, skydropx.ErrMockMode) {
 				log.Printf("bot: no se pudo consultar la orden %s: %v", p.OrderID, err)
 			}
-			continue
+			return
 		}
-		if sh, ok := b.guiaDeEnvios(ctx, ids); ok {
-			b.say(ctx, p.ChatID, sh.message())
-			if err := b.st.remove(p.OrderID); err != nil {
-				log.Printf("bot: no se pudo actualizar la orden %s: %v", p.OrderID, err)
-			}
+		shipmentIDs = ids
+	}
+	if sh, ok := b.guiaDeEnvios(ctx, shipmentIDs); ok {
+		b.say(ctx, p.ChatID, sh.message())
+		if err := b.st.remove(p.OrderID); err != nil {
+			log.Printf("bot: no se pudo actualizar la orden %s: %v", p.OrderID, err)
 		}
 	}
 }
