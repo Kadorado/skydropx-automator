@@ -23,7 +23,7 @@ type Options struct {
 	Token          string
 	APIBase        string        // vacío = API oficial de Telegram
 	AllowedChatIDs []int64       // chats autorizados (tú y tu vendedor)
-	AdminChatIDs   []int64       // chats que reciben aviso de cada orden nueva
+	AdminChatIDs   []int64       // chats que reciben aviso de cada orden nueva y de cada guía lista
 	DefaultValor   float64       // valor unitario si el mensaje no trae "Valor:"
 	StatePath      string        // archivo JSON con offset y órdenes pendientes
 	CheckEvery     time.Duration // cada cuánto revisar si hay guías nuevas
@@ -78,7 +78,7 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 		return
 	}
 	if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, te mando el PDF aquí.")
+		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, la mando "+b.guiaDestino()+".")
 		return
 	}
 	b.createOrder(ctx, chatID, sender, text)
@@ -97,6 +97,14 @@ func senderName(u *telegram.User) string {
 		name += " (@" + u.Username + ")"
 	}
 	return name
+}
+
+// guiaDestino dice dónde se publica la guía, para los mensajes al vendedor.
+func (b *Bot) guiaDestino() string {
+	if len(b.opts.AdminChatIDs) > 0 {
+		return "al grupo"
+	}
+	return "a este chat"
 }
 
 func (b *Bot) isAllowed(chatID int64) bool {
@@ -138,9 +146,9 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 	}
 
 	msg := fmt.Sprintf(
-		"✅ <b>Orden creada</b>\n👤 %s\n📍 %s, %s\n💰 Valor unitario: %s\n\nCuando finalicen el envío en Skydropx, la guía y el PDF llegarán a este chat.",
+		"✅ <b>Orden creada</b>\n👤 %s\n📍 %s, %s\n💰 Valor unitario: %s\n\nCuando finalicen el envío en Skydropx, la guía y el PDF llegarán %s.",
 		html.EscapeString(data.Nombre), html.EscapeString(data.Ciudad), html.EscapeString(data.Departamento),
-		formatCOP(data.ValorUnitario),
+		formatCOP(data.ValorUnitario), b.guiaDestino(),
 	)
 	if res.IsMock {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
@@ -215,7 +223,15 @@ func (b *Bot) checkPending(ctx context.Context, p Pending, shipmentIDs []string)
 		shipmentIDs = ids
 	}
 	if sh, ok := b.guiaDeEnvios(ctx, shipmentIDs); ok {
-		b.say(ctx, p.ChatID, sh.message())
+		// La guía va al grupo (TELEGRAM_ADMIN_CHAT_IDS); si no hay grupo configurado, al chat que pidió la orden.
+		targets := b.opts.AdminChatIDs
+		if len(targets) == 0 {
+			targets = []int64{p.ChatID}
+		}
+		msg := sh.message()
+		for _, id := range targets {
+			b.say(ctx, id, msg)
+		}
 		if err := b.st.remove(p.OrderID); err != nil {
 			log.Printf("bot: no se pudo actualizar la orden %s: %v", p.OrderID, err)
 		}
