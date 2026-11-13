@@ -38,7 +38,8 @@ func (c *Client) ValidateCoverage(ctx context.Context, data domain.ShipmentData)
 		destPostal = parser.LookupPostalCode(data.Ciudad)
 	}
 	if destPostal == "" {
-		return CoverageResult{OK: false, Message: "Falta el código postal de la dirección de destino."}, nil
+		// Sin código postal no se puede cotizar: se omite la validación en vez de bloquear la orden.
+		return CoverageResult{OK: true, Message: "Sin código postal de destino: validación de cobertura omitida."}, nil
 	}
 
 	qty := maxInt(1, data.Cantidad)
