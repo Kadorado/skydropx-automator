@@ -17,6 +17,18 @@ func (h *APIHandler) RegisterShipmentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/skydropx/shipments/{id}/label", h.handleShipmentLabel)
 	mux.HandleFunc("GET /api/skydropx/tracking", h.handleTracking)
 	mux.HandleFunc("GET /api/skydropx/status", h.handleStatuses)
+	mux.HandleFunc("GET /api/skydropx/order-quantities", h.handleOrderQuantities)
+}
+
+// handleOrderQuantities devuelve la cantidad de artículos de las órdenes pedidas (?ids=a,b,c).
+func (h *APIHandler) handleOrderQuantities(w http.ResponseWriter, r *http.Request) {
+	ids := strings.Split(r.URL.Query().Get("ids"), ",")
+	quantities, err := h.skydropxClient.OrderQuantities(r.Context(), ids)
+	if err != nil {
+		writeSkydropxError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"quantities": quantities})
 }
 
 func writeSkydropxError(w http.ResponseWriter, err error) {

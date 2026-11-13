@@ -53,6 +53,8 @@
   }
 
   const state = {
+    qty: {}, // cantidad de artículos por ID de orden
+    qtyRequested: new Set(),
     items: [],
     included: [],
     loaded: false,
@@ -276,10 +278,45 @@
     renderCards(pageItems);
     renderPagination(all.length, pages);
     syncChips();
+    loadQuantities(pageItems);
+  }
+
+  // Cantidad de artículos: Skydropx la guarda en la orden, así que se consulta solo para la página visible.
+  async function loadQuantities(items) {
+    const ids = items
+      .map((s) => s.attributes?.order_id)
+      .filter((id) => id && !state.qtyRequested.has(id));
+    if (ids.length === 0) return;
+    ids.forEach((id) => state.qtyRequested.add(id));
+    try {
+      const res = await fetch(`/api/skydropx/order-quantities?ids=${ids.map(encodeURIComponent).join(",")}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "No se pudo consultar la cantidad");
+      Object.assign(state.qty, body.quantities || {});
+    } catch (err) {
+      console.warn("Cantidad de artículos:", err.message);
+    }
+    ids.forEach((id) => {
+      if (!(id in state.qty)) state.qty[id] = null; // sin dato: se muestra "—"
+    });
+    render();
+  }
+
+  function qtyCell(s) {
+    const id = s.attributes?.order_id;
+    if (!id) return `<span class="text-slate-400">—</span>`;
+    if (!(id in state.qty)) return `<span class="skeleton inline-block h-4 w-6 rounded"></span>`;
+    const q = state.qty[id];
+    return q ? `<span class="font-semibold text-slate-800">${q}</span>` : `<span class="text-slate-400">—</span>`;
+  }
+
+  function qtyText(s) {
+    const q = state.qty[s.attributes?.order_id];
+    return q ? `${q} artículo${q === 1 ? "" : "s"}` : "";
   }
 
   function renderLoading() {
-    const row = `<tr><td colspan="6" class="px-5 py-4"><div class="skeleton h-5 rounded-md"></div></td></tr>`;
+    const row = `<tr><td colspan="7" class="px-5 py-4"><div class="skeleton h-5 rounded-md"></div></td></tr>`;
     $("orders-list").innerHTML = row.repeat(5);
     $("shipments-cards").innerHTML = `<div class="skeleton h-28 rounded-2xl"></div>`.repeat(3);
     $("shipments-count").textContent = "Cargando envíos…";
@@ -288,7 +325,7 @@
   function renderError(msg) {
     const html = `<div class="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-700">${escapeHtml(msg)}</div>`;
     $("shipments-cards").innerHTML = html;
-    $("orders-list").innerHTML = `<tr><td colspan="6" class="p-0">${html}</td></tr>`;
+    $("orders-list").innerHTML = `<tr><td colspan="7" class="p-0">${html}</td></tr>`;
     $("shipments-count").textContent = "No se pudieron cargar los envíos";
   }
 
@@ -307,7 +344,7 @@
     const tbody = $("orders-list");
     if (!state.loaded) return;
     if (items.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6">${emptyState()}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7">${emptyState()}</td></tr>`;
       return;
     }
     tbody.innerHTML = items
@@ -326,6 +363,7 @@
             <td class="whitespace-nowrap px-5 py-3.5">${guia}</td>
             <td class="px-5 py-3.5 font-medium text-slate-800">${escapeHtml(to.name || "—")}</td>
             <td class="px-5 py-3.5 text-slate-500">${escapeHtml(destinoOf(to) || "—")}</td>
+            <td class="px-5 py-3.5 text-center">${qtyCell(s)}</td>
             <td class="px-5 py-3.5">${estadoCell(s)}</td>
             <td class="whitespace-nowrap px-5 py-3.5 text-right">
               <button type="button" data-action="pdf" data-id="${s.id}" class="btn-ghost !px-3 !py-1.5 text-xs">PDF</button>
@@ -353,7 +391,7 @@
               <div class="min-w-0">
                 <p class="font-mono text-sm font-semibold text-slate-900">${a.master_tracking_number ? escapeHtml(a.master_tracking_number) : "Sin guía"}</p>
                 <p class="mt-0.5 truncate text-sm text-slate-600">${escapeHtml(to.name || "—")}</p>
-                <p class="mt-0.5 text-xs text-slate-400">${escapeHtml(destinoOf(to) || "—")} · ${escapeHtml(dayLabel(a.created_at))} ${escapeHtml(timeOf(a.created_at))}</p>
+                <p class="mt-0.5 text-xs text-slate-400">${escapeHtml(destinoOf(to) || "—")} · ${escapeHtml(dayLabel(a.created_at))} ${escapeHtml(timeOf(a.created_at))}${qtyText(s) ? ` · ${escapeHtml(qtyText(s))}` : ""}</p>
               </div>
               ${estadoCell(s)}
             </div>
