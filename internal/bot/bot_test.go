@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"skydropx-automator/internal/domain"
 	"skydropx-automator/internal/skydropx"
 )
 
@@ -82,5 +83,27 @@ func TestEnvioDeDetalleSePuedeLeer(t *testing.T) {
 	idx := parseShipments(list)
 	if len(idx) != 1 || idx[0].tracking != "240000000001" || idx[0].label == "" {
 		t.Fatalf("detalle mal interpretado: %+v", idx)
+	}
+}
+
+func TestHuellaIgnoraFormato(t *testing.T) {
+	a := domain.ShipmentData{Documento: "1.077.458.155", Telefono: "314 561 5105", Ciudad: "Quibdó", Direccion: "Carrera 7 # 30", Cantidad: 1, ValorUnitario: 60000}
+	b := domain.ShipmentData{Documento: "1077458155", Telefono: "3145615105", Ciudad: "QUIBDO", Direccion: "carrera 7 #30", Cantidad: 1, ValorUnitario: 60000}
+	if huella(a) != huella(b) {
+		t.Fatalf("el mismo pedido con distinto formato debería tener la misma huella:\n%s\n%s", huella(a), huella(b))
+	}
+	b.Cantidad = 2
+	if huella(a) == huella(b) {
+		t.Fatal("otra cantidad debería ser otro pedido")
+	}
+}
+
+func TestQuitarRepetir(t *testing.T) {
+	text, forzar := quitarRepetir("*REPETIR*\n*Receptor:* Ana")
+	if !forzar || text != "*Receptor:* Ana" {
+		t.Fatalf("got %q, %v", text, forzar)
+	}
+	if _, forzar := quitarRepetir("*Receptor:* Ana"); forzar {
+		t.Fatal("sin REPETIR no debería forzar")
 	}
 }

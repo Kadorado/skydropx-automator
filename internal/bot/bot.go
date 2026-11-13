@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -99,6 +100,43 @@ func senderName(u *telegram.User) string {
 	return name
 }
 
+// duplicateWindow es el tiempo en que un pedido con los mismos datos se considera repetido.
+const duplicateWindow = 24 * time.Hour
+
+// quitarRepetir detecta "REPETIR" en la primera línea: el vendedor confirma que el pedido repetido es nuevo.
+func quitarRepetir(text string) (string, bool) {
+	first, rest, _ := strings.Cut(text, "\n")
+	if strings.EqualFold(strings.Trim(strings.TrimSpace(first), "*_ "), "repetir") {
+		return strings.TrimSpace(rest), true
+	}
+	return text, false
+}
+
+// huella identifica un pedido por destinatario, dirección, cantidad y valor, sin importar
+// mayúsculas, tildes, espacios ni signos.
+func huella(d domain.ShipmentData) string {
+	parts := []string{
+		d.Documento, d.Telefono, d.Ciudad, d.Direccion,
+		strconv.Itoa(d.Cantidad), strconv.FormatFloat(d.ValorUnitario, 'f', 0, 64),
+	}
+	for i, p := range parts {
+		parts[i] = normalizar(p)
+	}
+	return strings.Join(parts, "|")
+}
+
+func haceCuanto(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "menos de un minuto"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%d h", int(d.Hours()))
+	}
+}
+
 // guiaDestino dice dónde se publica la guía, para los mensajes al vendedor.
 func (b *Bot) guiaDestino() string {
 	if len(b.opts.AdminChatIDs) > 0 {
@@ -117,12 +155,23 @@ func (b *Bot) isAllowed(chatID int64) bool {
 }
 
 func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string) {
+	text, forzar := quitarRepetir(text)
 	data := parser.ParseWhatsAppMessage(text).Data
 	if data.ValorUnitario <= 0 {
 		data.ValorUnitario = b.opts.DefaultValor
 	}
 	if missing := parser.ValidateShipmentData(data); len(missing) > 0 {
 		b.say(ctx, chatID, "⚠️ Faltan datos para crear la orden: <b>"+html.EscapeString(strings.Join(missing, ", "))+"</b>. Envíame el mensaje completo de nuevo.")
+		return
+	}
+
+	h := huella(data)
+	desde := time.Now().Add(-duplicateWindow)
+	if prev, ok := b.st.findRecent(h, desde); ok && !forzar {
+		b.say(ctx, chatID, fmt.Sprintf(
+			"⚠️ <b>Esta orden ya se creó</b> hace %s para <b>%s</b> con los mismos datos, así que no la volví a crear.\n\nSi de verdad es un pedido nuevo, envíame el mensaje otra vez escribiendo <code>REPETIR</code> en la primera línea.",
+			haceCuanto(prev.CreatedAt), html.EscapeString(prev.Nombre),
+		))
 		return
 	}
 
@@ -143,6 +192,9 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 		CreatedAt: time.Now(),
 	}); err != nil {
 		log.Printf("bot: no se pudo guardar la orden pendiente %s: %v", res.ID, err)
+	}
+	if err := b.st.addRecent(Recent{Huella: h, OrderID: res.ID, Nombre: data.Nombre, CreatedAt: time.Now()}, desde); err != nil {
+		log.Printf("bot: no se pudo guardar la orden reciente %s: %v", res.ID, err)
 	}
 
 	msg := fmt.Sprintf(
@@ -330,7 +382,7 @@ func (s shipmentInfo) message() string {
 	}
 	seguimiento := s.trackingURL
 	if seguimiento == "" {
-		seguimiento = carrierTrackingURL[carrierKey(s.carrier)]
+		seguimiento = carrierTrackingURL[normalizar(s.carrier)]
 	}
 	if seguimiento == "" {
 		seguimiento = "pendiente"
@@ -383,8 +435,8 @@ var carrierTrackingURL = map[string]string{
 	"coordinadora":    "https://coordinadora.com/",
 }
 
-// carrierKey normaliza el nombre de la transportadora: "Interrapidísimo" -> "interrapidisimo".
-func carrierKey(name string) string {
+// normalizar deja solo letras sin tilde y números, en minúscula: "Interrapidísimo" -> "interrapidisimo".
+func normalizar(name string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(name) {
 		switch r {
@@ -399,7 +451,7 @@ func carrierKey(name string) string {
 		case 'ú', 'ü':
 			r = 'u'
 		}
-		if r >= 'a' && r <= 'z' {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
 		}
 	}
@@ -407,7 +459,7 @@ func carrierKey(name string) string {
 }
 
 func carrierDisplayName(name string) string {
-	if n, ok := carrierNames[carrierKey(name)]; ok {
+	if n, ok := carrierNames[normalizar(name)]; ok {
 		return n
 	}
 	return strings.TrimSpace(name)

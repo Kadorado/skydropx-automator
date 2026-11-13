@@ -17,10 +17,19 @@ type Pending struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Recent es una orden creada hace poco, para detectar pedidos repetidos.
+type Recent struct {
+	Huella    string    `json:"huella"`
+	OrderID   string    `json:"order_id"`
+	Nombre    string    `json:"nombre"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // State se guarda en disco para no perder el progreso al reiniciar.
 type State struct {
 	Offset  int64     `json:"offset"`
 	Pending []Pending `json:"pending"`
+	Recent  []Recent  `json:"recent"`
 
 	mu   sync.Mutex
 	path string
@@ -96,6 +105,32 @@ func (s *State) isPending(orderID string) bool {
 		}
 	}
 	return false
+}
+
+// findRecent busca una orden con la misma huella creada después de since.
+func (s *State) findRecent(huella string, since time.Time) (Recent, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range s.Recent {
+		if r.Huella == huella && r.CreatedAt.After(since) {
+			return r, true
+		}
+	}
+	return Recent{}, false
+}
+
+// addRecent registra una orden y descarta las anteriores a since.
+func (s *State) addRecent(r Recent, since time.Time) error {
+	s.mu.Lock()
+	kept := s.Recent[:0]
+	for _, old := range s.Recent {
+		if old.CreatedAt.After(since) {
+			kept = append(kept, old)
+		}
+	}
+	s.Recent = append(kept, r)
+	s.mu.Unlock()
+	return s.save()
 }
 
 func (s *State) snapshotPending() []Pending {
