@@ -2,8 +2,8 @@
 .env.*
 .git
 .gitignore
-server
-server_bin
+/server
+/server_bin
 *.log
 *.bin
 *.pdf

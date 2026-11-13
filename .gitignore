@@ -1,4 +1,4 @@
 .env
-server
-server_bin
+/server
+/server_bin
 data/

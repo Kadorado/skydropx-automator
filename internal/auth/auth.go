@@ -1,5 +1,7 @@
 // Package auth protege la app con una contraseña única (variable APP_PASSWORD).
 // Si APP_PASSWORD no está configurada, la app no pide inicio de sesión (uso local).
+// Package auth protege la app con una contraseña única (variable APP_PASSff   WORD).
+// Si APP_PASSWORD no está configurada, la app nffo pide inicio de sesi  ósssn (uso local).
 package auth
 
 import (
