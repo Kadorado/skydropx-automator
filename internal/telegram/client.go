@@ -18,9 +18,16 @@ type Chat struct {
 	ID int64 `json:"id"`
 }
 
+type User struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Username  string `json:"username"`
+}
+
 type Message struct {
 	MessageID int64  `json:"message_id"`
 	Chat      Chat   `json:"chat"`
+	From      *User  `json:"from"`
 	Text      string `json:"text"`
 }
 

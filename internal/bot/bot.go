@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"skydropx-automator/internal/domain"
 	"skydropx-automator/internal/parser"
 	"skydropx-automator/internal/skydropx"
 	"skydropx-automator/internal/telegram"
@@ -21,6 +22,7 @@ type Options struct {
 	Token          string
 	APIBase        string        // vacío = API oficial de Telegram
 	AllowedChatIDs []int64       // chats autorizados (tú y tu vendedor)
+	AdminChatIDs   []int64       // chats que reciben aviso de cada orden nueva
 	DefaultValor   float64       // valor unitario si el mensaje no trae "Valor:"
 	StatePath      string        // archivo JSON con offset y órdenes pendientes
 	CheckEvery     time.Duration // cada cuánto revisar si hay guías nuevas
@@ -57,7 +59,7 @@ func (b *Bot) Run(ctx context.Context) {
 		}
 		for _, u := range updates {
 			if u.Message != nil {
-				b.handle(ctx, u.Message.Chat.ID, strings.TrimSpace(u.Message.Text))
+				b.handle(ctx, u.Message.Chat.ID, senderName(u.Message.From), strings.TrimSpace(u.Message.Text))
 			}
 			if err := b.st.setOffset(u.UpdateID + 1); err != nil {
 				log.Printf("bot: no se pudo guardar el progreso: %v", err)
@@ -66,7 +68,7 @@ func (b *Bot) Run(ctx context.Context) {
 	}
 }
 
-func (b *Bot) handle(ctx context.Context, chatID int64, text string) {
+func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 	if !b.isAllowed(chatID) {
 		log.Printf("bot: chat no autorizado %d", chatID)
 		b.say(ctx, chatID, fmt.Sprintf("No estás autorizado para usar este bot. Tu ID de chat es <code>%d</code>. Pásaselo al administrador para que te dé acceso.", chatID))
@@ -76,7 +78,22 @@ func (b *Bot) handle(ctx context.Context, chatID int64, text string) {
 		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, te mando el PDF aquí.")
 		return
 	}
-	b.createOrder(ctx, chatID, text)
+	b.createOrder(ctx, chatID, sender, text)
+}
+
+// senderName arma un nombre legible de quien escribió, para el aviso al administrador.
+func senderName(u *telegram.User) string {
+	if u == nil {
+		return ""
+	}
+	name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+	if u.Username != "" {
+		if name == "" {
+			return "@" + u.Username
+		}
+		name += " (@" + u.Username + ")"
+	}
+	return name
 }
 
 func (b *Bot) isAllowed(chatID int64) bool {
@@ -88,7 +105,7 @@ func (b *Bot) isAllowed(chatID int64) bool {
 	return false
 }
 
-func (b *Bot) createOrder(ctx context.Context, chatID int64, text string) {
+func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string) {
 	data := parser.ParseWhatsAppMessage(text).Data
 	if data.ValorUnitario <= 0 {
 		data.ValorUnitario = b.opts.DefaultValor
@@ -126,6 +143,33 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, text string) {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
 	}
 	b.say(ctx, chatID, msg)
+	b.notifyAdmins(ctx, chatID, sender, data, res.IsMock)
+}
+
+// notifyAdmins avisa a los administradores que hay una orden nueva para gestionar en Skydropx.
+// No avisa al mismo chat que creó la orden.
+func (b *Bot) notifyAdmins(ctx context.Context, fromChatID int64, sender string, data domain.ShipmentData, isMock bool) {
+	if sender == "" {
+		sender = fmt.Sprintf("chat %d", fromChatID)
+	}
+	qty := data.Cantidad
+	if qty < 1 {
+		qty = 1
+	}
+	msg := fmt.Sprintf(
+		"🆕 <b>Nueva orden para gestionar</b>\n🧑‍💼 Creada por: %s\n👤 %s\n📞 %s\n📍 %s, %s\n🏠 %s\n📦 Cantidad: %d\n💰 Cobro contra entrega: %s\n\nEntra a Skydropx para escoger transportadora y generar la guía.",
+		html.EscapeString(sender), html.EscapeString(data.Nombre), html.EscapeString(data.Telefono),
+		html.EscapeString(data.Ciudad), html.EscapeString(data.Departamento), html.EscapeString(data.Direccion),
+		qty, formatCOP(data.ValorUnitario*float64(qty)),
+	)
+	if isMock {
+		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
+	}
+	for _, id := range b.opts.AdminChatIDs {
+		if id != fromChatID {
+			b.say(ctx, id, msg)
+		}
+	}
 }
 
 // watchGuias revisa periódicamente las órdenes pendientes y avisa cuando ya tienen guía.

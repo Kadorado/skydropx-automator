@@ -32,3 +32,5 @@ services:
         sync: false
       - key: TELEGRAM_ALLOWED_CHAT_IDS
         sync: false
+      - key: TELEGRAM_ADMIN_CHAT_IDS
+        sync: false

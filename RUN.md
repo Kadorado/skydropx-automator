@@ -19,6 +19,7 @@ Se leen desde el archivo `.env` (en local) o desde el panel de Render (en produc
 | `APP_PASSWORD` | Recomendada | Contraseña para entrar a la app. Sin ella, no pide login (solo para uso local). |
 | `TELEGRAM_BOT_TOKEN` | Para el bot | Token que te da @BotFather. Sin él, el bot queda desactivado. |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | Para el bot | IDs de chat autorizados, separados por coma. |
+| `TELEGRAM_ADMIN_CHAT_IDS` | Opcional | IDs de chat que reciben un aviso cada vez que se crea una orden por el bot (por ejemplo, el tuyo). |
 | `DEFAULT_VALOR_UNITARIO` | No | Valor unitario si el mensaje no trae `Valor:`. Por defecto `60000`. |
 | `GUIA_CHECK_MINUTES` | No | Cada cuántos minutos se revisan guías nuevas. Por defecto `5`. |
 | `BOT_STATE_FILE` | No | Archivo de estado del bot. Local: `data/bot_state.json`. Render: `/var/data/bot_state.json`. |

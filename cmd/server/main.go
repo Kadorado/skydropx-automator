@@ -32,6 +32,7 @@ func main() {
 			Token:          cfg.TelegramToken,
 			APIBase:        cfg.TelegramAPIBase,
 			AllowedChatIDs: cfg.TelegramAllowedChatIDs,
+			AdminChatIDs:   cfg.TelegramAdminChatIDs,
 			DefaultValor:   cfg.DefaultValorUnitario,
 			StatePath:      cfg.BotStatePath,
 			CheckEvery:     time.Duration(cfg.GuiaCheckMinutes) * time.Minute,
