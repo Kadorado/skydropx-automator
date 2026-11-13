@@ -152,6 +152,16 @@
     return state.status[s.id];
   }
 
+  // Cobro para el mensaje: usa el rastreo si ya cargó; si no, el estado contra entrega del propio envío.
+  function cobroTexto(s) {
+    const st = statusOf(s);
+    if (st?.cobro === "no_aplica" && st.key === "cancelado") return "No aplica (envío cancelado)";
+    const key = COBRO[st?.cobro] ? st.cobro : { collected: "cobrado", pending: "por_cobrar" }[s.attributes?.on_delivery_status];
+    if (key === "cobrado") return "Cobrado (pago contra entrega)";
+    if (key === "por_cobrar") return "Por cobrar (pago contra entrega)";
+    return "No aplica";
+  }
+
   // Estado logístico + cobro. Muestra un placeholder mientras llega el rastreo.
   function estadoCell(s) {
     const st = statusOf(s);
@@ -413,7 +423,7 @@
       transportadora: [carrierName(a.carrier_name), a.service_name].filter(Boolean).join(" - ") || "Interrapidísimo",
       seguimiento: pkg.tracking_url_provider || CARRIER_TRACKING[carrierKey(a.carrier_name)] || "pendiente",
       estado: (statusOf(shipment) && (ESTADO[statusOf(shipment).key]?.label || statusOf(shipment).label)) || "pendiente de rastreo",
-      cobro: (statusOf(shipment) && COBRO[statusOf(shipment).cobro]?.label) || "No aplica",
+      cobro: cobroTexto(shipment),
       pdf: pkg.label_url || "pendiente (la guía aún no está disponible)",
     };
 
