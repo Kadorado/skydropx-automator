@@ -62,7 +62,7 @@ func Load() Config {
 		OriginCity:           getEnv("ORIGIN_CITY", "Bello"),
 		OriginState:          getEnv("ORIGIN_STATE", "Antioquia"),
 		OriginCountry:        getEnv("ORIGIN_COUNTRY", "CO"),
-		OriginPostalCode:     getEnv("ORIGIN_POSTAL_CODE", "05088000"),
+		OriginPostalCode:     getEnv("ORIGIN_POSTAL_CODE", "051051"),
 		OriginPhone:          getEnv("ORIGIN_PHONE", "3006368229"),
 		OriginEmail:          getEnv("ORIGIN_EMAIL", "leadmarket07@gmail.com"),
 
