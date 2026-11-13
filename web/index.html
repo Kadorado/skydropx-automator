@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#4f46e5" />
+  <title>Envíos Skydropx</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+        },
+      },
+    };
+  </script>
+  <style type="text/tailwindcss">
+    @layer components {
+      .card { @apply rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5 sm:p-7; }
+      .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition duration-150 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98]; }
+      .btn-primary { @apply btn bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25 hover:brightness-110; }
+      .btn-ghost { @apply btn bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50; }
+      .btn-soft { @apply btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100; }
+      .btn-success { @apply btn bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25 hover:brightness-110; }
+      .btn-whatsapp { @apply btn bg-[#25D366] text-white shadow-lg shadow-emerald-500/25 hover:brightness-95; }
+      .btn-telegram { @apply btn bg-[#229ED9] text-white shadow-lg shadow-sky-500/25 hover:brightness-95; }
+      .field-input { @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-100; }
+      .field-label { @apply mb-1.5 block text-sm font-medium text-slate-700; }
+      .section-title { @apply mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400; }
+      .badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium; }
+      .stat { @apply rounded-2xl bg-white p-3 ring-1 ring-slate-900/5 shadow-sm sm:p-5; }
+      .nav-pill { @apply inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-500 transition hover:text-slate-900; }
+      .nav-pill[aria-selected="true"] { @apply bg-slate-900 text-white shadow-md; }
+      .chip { @apply rounded-full px-3.5 py-1.5 text-xs font-semibold ring-1 ring-slate-200 bg-white text-slate-600 transition hover:bg-slate-50; }
+      .chip[aria-pressed="true"] { @apply bg-indigo-600 text-white ring-indigo-600 shadow-sm; }
+      .icon-btn { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-200; }
+    }
+  </style>
+  <style>
+    .input-missing { border-color: #f87171 !important; background: #fef2f2 !important; }
+    .step-enter { animation: stepIn .4s cubic-bezier(.2,.8,.2,1); }
+    @keyframes stepIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    .drawer-in { animation: drawerIn .3s cubic-bezier(.2,.8,.2,1); }
+    @keyframes drawerIn { from { transform: translateX(100%); } to { transform: none; } }
+    .fade-in { animation: fadeIn .25s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .pop { animation: pop .5s cubic-bezier(.2,.8,.2,1); }
+    @keyframes pop { 0% { transform: scale(.6); opacity: 0; } 70% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
+    .skeleton { background: linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 37%,#f1f5f9 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
+    @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+    .toast-in { animation: toastIn .3s cubic-bezier(.2,.8,.2,1); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+    /* Pasos del stepper */
+    .step-dot { transition: all .3s ease; }
+    .step[data-state="current"] .step-dot { background: linear-gradient(135deg,#4f46e5,#7c3aed); color: #fff; box-shadow: 0 0 0 4px #e0e7ff; }
+    .step[data-state="done"] .step-dot { background: #10b981; color: #fff; }
+    .step[data-state="todo"] .step-dot { background: #e2e8f0; color: #64748b; }
+    .step[data-state="current"] .step-label { color: #0f172a; font-weight: 600; }
+    .step[data-state="todo"] .step-label { color: #94a3b8; }
+    .step-line { background: #e2e8f0; }
+    .step-line > div { transition: width .5s ease; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased">
+
+  <!-- Encabezado -->
+  <header class="sticky top-0 z-30 border-b border-slate-200/70 bg-white/80 backdrop-blur-lg">
+    <div class="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+      <div class="flex min-w-0 items-center gap-3">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/30">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3.3 7.3 8.7 4.7 8.7-4.7M12 22V12"/></svg>
+        </div>
+        <div class="min-w-0">
+          <h1 class="truncate text-base font-bold text-slate-900">Skydropx</h1>
+          <p id="system-badge" class="hidden truncate text-xs text-slate-500 sm:block">Cargando configuración…</p>
+        </div>
+      </div>
+
+      <nav class="flex shrink-0 items-center gap-1 rounded-2xl bg-slate-100 p-1" role="tablist" aria-label="Secciones">
+        <button type="button" id="tab-crear" role="tab" aria-selected="true" class="nav-pill">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Crear orden</span>
+        </button>
+        <button type="button" id="tab-envios" role="tab" aria-selected="false" class="nav-pill">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="13" height="10" rx="2"/><path d="M15 10h4l3 3v4h-7"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+          <span>Envíos</span>
+        </button>
+        <a href="/logout" class="ml-1 rounded-xl px-3 py-2 text-sm font-semibold text-slate-400 transition hover:text-red-600" title="Cerrar sesión">Salir</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+
+    <!-- ============ VISTA: CREAR ORDEN ============ -->
+    <div id="view-crear" class="space-y-6">
+
+      <div>
+        <h2 class="text-2xl font-bold tracking-tight text-slate-900">Crear orden</h2>
+        <p class="mt-1 text-sm text-slate-500">Pega el mensaje del cliente, revisa los datos y genera el envío.</p>
+      </div>
+
+      <!-- Stepper -->
+      <div class="card !p-5">
+        <div class="relative flex items-start justify-between">
+          <div class="step-line absolute left-[16.67%] right-[16.67%] top-4 h-1 rounded-full">
+            <div id="progress-bar" class="h-full w-0 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600"></div>
+          </div>
+          <div id="step-ind-1" class="step relative z-10 flex flex-1 flex-col items-center gap-2 text-center" data-state="current">
+            <span class="step-dot flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold">1</span>
+            <span class="step-label text-xs sm:text-sm">Pegar mensaje</span>
+          </div>
+          <div id="step-ind-2" class="step relative z-10 flex flex-1 flex-col items-center gap-2 text-center" data-state="todo">
+            <span class="step-dot flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold">2</span>
+            <span class="step-label text-xs sm:text-sm">Revisar datos</span>
+          </div>
+          <div id="step-ind-3" class="step relative z-10 flex flex-1 flex-col items-center gap-2 text-center" data-state="todo">
+            <span class="step-dot flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold">3</span>
+            <span class="step-label text-xs sm:text-sm">Resultado</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PASO 1: PEGAR MENSAJE -->
+      <section id="screen-1" class="card step-enter">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-900">Mensaje de WhatsApp</h3>
+            <p class="mt-1 text-sm text-slate-500">Copia el mensaje completo del cliente y pégalo aquí.</p>
+          </div>
+          <button type="button" id="btn-load-sample" class="btn-soft !px-3 !py-2 text-xs">Cargar ejemplo</button>
+        </div>
+
+        <textarea id="raw-message" rows="12" class="field-input mt-5 font-mono !text-[13px] leading-relaxed" placeholder="DATOS DE ENVÍO&#10;Receptor: …&#10;Documento: …&#10;Teléfono: …&#10;Ciudad: …&#10;Dirección: …"></textarea>
+
+        <div id="error-screen-1" class="mt-4 hidden rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"></div>
+
+        <div class="mt-6 flex justify-end">
+          <button type="button" id="btn-parse" class="btn-primary">
+            Procesar mensaje
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- PASO 2: REVISAR DATOS -->
+      <section id="screen-2" class="card hidden">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-900">Revisa los datos</h3>
+            <p class="mt-1 text-sm text-slate-500">Los campos marcados en rojo necesitan tu atención.</p>
+          </div>
+          <span class="badge bg-indigo-50 text-indigo-700">Origen: Bello, Antioquia · Interrapidísimo</span>
+        </div>
+
+        <div id="alert-missing" class="mt-5 hidden rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"></div>
+        <div id="error-screen-2" class="mt-5 hidden rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"></div>
+
+        <form id="shipment-form" novalidate class="mt-6 space-y-7">
+          <div>
+            <p class="section-title">Destinatario</p>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div class="sm:col-span-2">
+                <label for="f-nombre" class="field-label">Nombre completo *</label>
+                <input type="text" id="f-nombre" class="field-input" required />
+              </div>
+              <div>
+                <label for="f-documento" class="field-label">Documento (CC / NIT) *</label>
+                <input type="text" id="f-documento" inputmode="numeric" class="field-input" required />
+              </div>
+              <div>
+                <label for="f-telefono" class="field-label">Teléfono (10 dígitos) *</label>
+                <input type="tel" id="f-telefono" inputmode="tel" class="field-input" required />
+              </div>
+              <div class="sm:col-span-2">
+                <label for="f-correo" class="field-label">Correo electrónico</label>
+                <input type="email" id="f-correo" placeholder="opcional@correo.com" class="field-input" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p class="section-title">Ubicación</p>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label for="f-departamento" class="field-label">Departamento *</label>
+                <input type="text" id="f-departamento" placeholder="Ej: Chocó" class="field-input" required />
+              </div>
+              <div>
+                <label for="f-ciudad" class="field-label">Ciudad / Municipio *</label>
+                <input type="text" id="f-ciudad" placeholder="Ej: Quibdó" class="field-input" required />
+              </div>
+              <div class="sm:col-span-2">
+                <label for="f-direccion" class="field-label">Dirección exacta *</label>
+                <input type="text" id="f-direccion" class="field-input" required />
+              </div>
+              <div>
+                <label for="f-barrio" class="field-label">Barrio</label>
+                <input type="text" id="f-barrio" class="field-input" />
+              </div>
+              <div>
+                <label for="f-referencia" class="field-label">Referencia (opcional)</label>
+                <input type="text" id="f-referencia" class="field-input" />
+              </div>
+              <input type="hidden" id="f-pais" value="Colombia" />
+              <input type="hidden" id="f-codigo-postal" />
+            </div>
+          </div>
+
+          <div>
+            <p class="section-title">Paquete</p>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label for="f-cantidad" class="field-label">Cantidad de unidades *</label>
+                <input type="number" id="f-cantidad" min="1" value="1" class="field-input" required />
+              </div>
+              <div>
+                <label for="f-valor_unitario" class="field-label">Valor unitario (COP) *</label>
+                <div class="relative">
+                  <span class="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-slate-400">$</span>
+                  <input type="number" id="f-valor_unitario" min="1" step="1" value="60000" class="field-input pl-7" required />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cobertura -->
+          <div id="coverage-status" class="hidden rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600"></div>
+
+          <div class="flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" id="btn-back" class="btn-ghost">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+              Volver
+            </button>
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <button type="button" id="btn-validate-address" class="btn-soft">
+                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                Validar dirección
+              </button>
+              <button type="submit" id="btn-submit" class="btn-success">Confirmar y generar envío</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- PASO 3: RESULTADO -->
+      <section id="screen-3" class="card hidden step-enter">
+        <div id="result-success" class="text-center">
+          <div class="pop mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <svg viewBox="0 0 24 24" class="h-8 w-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17 19 7"/></svg>
+          </div>
+          <h3 class="mt-4 text-xl font-bold text-slate-900">Envío generado</h3>
+          <span id="mock-badge" class="badge mt-2 hidden bg-amber-100 text-amber-800">Modo simulación</span>
+
+          <dl class="mx-auto mt-6 grid max-w-xl grid-cols-1 gap-3 text-left sm:grid-cols-2">
+            <div class="rounded-xl bg-slate-50 p-4"><dt class="text-xs font-medium uppercase tracking-wide text-slate-400">Destinatario</dt><dd id="res-nombre" class="mt-1 font-semibold text-slate-900">-</dd></div>
+            <div class="rounded-xl bg-slate-50 p-4"><dt class="text-xs font-medium uppercase tracking-wide text-slate-400">Destino</dt><dd id="res-destino" class="mt-1 font-semibold text-slate-900">-</dd></div>
+            <div class="rounded-xl bg-slate-50 p-4"><dt class="text-xs font-medium uppercase tracking-wide text-slate-400">Transportadora</dt><dd id="res-carrier" class="mt-1 font-semibold text-slate-900">-</dd></div>
+            <div class="rounded-xl bg-slate-50 p-4"><dt class="text-xs font-medium uppercase tracking-wide text-slate-400">Número de guía</dt><dd id="res-tracking" class="mt-1 font-mono font-semibold text-indigo-700">-</dd></div>
+            <div id="row-cost" class="rounded-xl bg-slate-50 p-4 sm:col-span-2"><dt class="text-xs font-medium uppercase tracking-wide text-slate-400">Costo estimado</dt><dd id="res-cost" class="mt-1 font-semibold text-slate-900">-</dd></div>
+          </dl>
+
+          <div class="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <a id="btn-download-label" href="#" target="_blank" rel="noopener" class="btn-primary">Descargar guía</a>
+            <a id="btn-skydropx-orders" href="https://app.skydropx.com/co/es-CO/orders" target="_blank" rel="noopener" class="btn-ghost">Ver órdenes en Skydropx</a>
+            <button type="button" id="btn-new-shipment" class="btn-ghost">Crear otro envío</button>
+          </div>
+        </div>
+
+        <div id="result-error" class="hidden text-center">
+          <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100 text-red-600">
+            <svg viewBox="0 0 24 24" class="h-8 w-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </div>
+          <h3 class="mt-4 text-xl font-bold text-slate-900">No se pudo generar el envío</h3>
+          <p id="res-error-msg" class="mx-auto mt-3 max-w-xl rounded-xl bg-red-50 px-4 py-3 text-left text-sm text-red-700"></p>
+          <div class="mt-8 flex justify-center">
+            <button type="button" id="btn-retry" class="btn-primary">Volver a revisar</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ VISTA: ENVÍOS ============ -->
+    <div id="view-envios" class="hidden space-y-6">
+
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 class="text-2xl font-bold tracking-tight text-slate-900">Envíos</h2>
+          <p id="shipments-count" class="mt-1 text-sm text-slate-500">Cargando…</p>
+        </div>
+        <button type="button" id="btn-refresh-orders" class="btn-ghost">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v5h-5"/></svg>
+          Actualizar
+        </button>
+      </div>
+
+      <!-- Estadísticas -->
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-4">
+        <div class="stat"><p class="text-[10px] font-medium uppercase leading-tight tracking-wide text-slate-400 sm:text-xs">En camino</p><p id="stat-camino" class="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl text-sky-600">–</p></div>
+        <div class="stat"><p class="text-[10px] font-medium uppercase leading-tight tracking-wide text-slate-400 sm:text-xs">Entregados</p><p id="stat-entregado" class="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl text-emerald-600">–</p></div>
+        <div class="stat"><p class="text-[10px] font-medium uppercase leading-tight tracking-wide text-slate-400 sm:text-xs">Cobrados</p><p id="stat-cobrado" class="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl text-teal-600">–</p></div>
+        <div class="stat"><p class="text-[10px] font-medium uppercase leading-tight tracking-wide text-slate-400 sm:text-xs">Por cobrar</p><p id="stat-porcobrar" class="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl text-amber-600">–</p></div>
+      </div>
+
+      <!-- Filtros -->
+      <div class="card !p-4">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="btn-filter-today" class="chip" aria-pressed="true">Hoy</button>
+            <button type="button" id="btn-filter-yesterday" class="chip" aria-pressed="false">Ayer</button>
+            <button type="button" id="btn-filter-all" class="chip" aria-pressed="false">Todos</button>
+            <input type="date" id="filter-day" aria-label="Filtrar por día" class="field-input !w-auto !py-2 text-xs" />
+            <select id="filter-estado" aria-label="Filtrar por estado" class="field-input !w-auto !py-2 text-xs">
+              <option value="">Todos los estados</option>
+              <option value="en_camino">En camino</option>
+              <option value="entregado">Entregado</option>
+              <option value="intento_entrega">Intento de entrega</option>
+              <option value="en_proceso">En proceso</option>
+              <option value="creado">Creado</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+            <select id="filter-cobro" aria-label="Filtrar por cobro" class="field-input !w-auto !py-2 text-xs">
+              <option value="">Todo el cobro</option>
+              <option value="cobrado">Cobrado</option>
+              <option value="por_cobrar">Por cobrar</option>
+            </select>
+          </div>
+          <div class="relative lg:w-72">
+            <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="filter-search" placeholder="Buscar guía, nombre o ciudad" class="field-input pl-10" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabla (escritorio) -->
+      <div class="hidden overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5 md:block">
+        <table class="min-w-full divide-y divide-slate-100 text-sm">
+          <thead class="bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <tr>
+              <th class="px-5 py-3">Fecha</th>
+              <th class="px-5 py-3">Guía</th>
+              <th class="px-5 py-3">Destinatario</th>
+              <th class="px-5 py-3">Destino</th>
+              <th class="px-5 py-3">Estado</th>
+              <th class="px-5 py-3 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="orders-list" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+
+      <!-- Tarjetas (móvil) -->
+      <div id="shipments-cards" class="space-y-3 md:hidden"></div>
+
+      <!-- Paginación -->
+      <div class="flex items-center justify-between gap-3">
+        <p id="page-info" class="text-sm text-slate-500"></p>
+        <div class="flex gap-2">
+          <button type="button" id="btn-prev-page" class="btn-ghost !px-3 !py-2" aria-label="Página anterior">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <button type="button" id="btn-next-page" class="btn-ghost !px-3 !py-2" aria-label="Página siguiente">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Panel lateral: detalle y mensaje para el vendedor -->
+  <div id="drawer" class="fixed inset-0 z-50 hidden">
+    <div id="drawer-overlay" class="fade-in absolute inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
+    <aside id="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="od-title" class="drawer-in absolute inset-y-0 right-0 flex w-full max-w-lg flex-col bg-white shadow-2xl">
+      <div class="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+        <div class="min-w-0">
+          <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Envío</p>
+          <h3 id="od-title" class="mt-1 truncate text-lg font-bold text-slate-900"></h3>
+          <p id="od-info" class="mt-1 text-sm text-slate-500"></p>
+        </div>
+        <button type="button" id="btn-close-drawer" class="icon-btn" aria-label="Cerrar">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+        <div id="od-status" class="rounded-xl bg-slate-50 p-4 text-sm"></div>
+
+        <a id="od-pdf-link" href="#" target="_blank" rel="noopener" class="btn-soft w-full">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3 3 3-3"/></svg>
+          Abrir guía (PDF)
+        </a>
+
+        <div>
+          <label for="wa-phone" class="field-label">WhatsApp del vendedor</label>
+          <input type="tel" id="wa-phone" inputmode="tel" placeholder="3145319944" class="field-input" />
+          <p class="mt-1.5 text-xs text-slate-400">Se usa para WhatsApp. Telegram abre el chat configurado.</p>
+        </div>
+
+        <div>
+          <div class="mb-1.5 flex items-center justify-between">
+            <label for="wa-template" class="text-sm font-medium text-slate-700">Mensaje</label>
+            <span class="text-xs text-slate-400">Editable</span>
+          </div>
+          <textarea id="wa-template" rows="10" class="field-input leading-relaxed"></textarea>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-5 sm:grid-cols-3">
+        <button type="button" id="btn-copy-msg" class="btn-ghost">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          Copiar
+        </button>
+        <a id="wa-link" href="#" target="_blank" rel="noopener" class="btn-whatsapp hidden">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91C21.95 6.45 17.5 2 12.04 2zm0 18.15c-1.48 0-2.93-.4-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.23 8.23 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 4.54 0 8.24 3.7 8.24 8.24 0 4.54-3.7 8.24-8.24 8.24zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.78.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.24-1.47-1.38-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42h-.48c-.17 0-.43.06-.66.31-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.11-.23-.17-.48-.29z"/></svg>
+          WhatsApp
+        </a>
+        <a id="tg-link" href="#" target="_blank" rel="noopener" class="btn-telegram hidden">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>
+          Telegram
+        </a>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Notificaciones -->
+  <div id="toast-root" class="pointer-events-none fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2"></div>
+
+  <script src="app.js?v=9"></script>
+  <script src="mis-envios.js?v=21"></script>
+</body>
+</html>

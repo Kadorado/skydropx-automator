@@ -1,0 +1,328 @@
+// Package bot recibe los mensajes del vendedor por Telegram, crea la orden en Skydropx
+// y avisa cuando la guía del envío ya está generada.
+package bot
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html"
+	"log"
+	"strings"
+	"time"
+
+	"skydropx-automator/internal/parser"
+	"skydropx-automator/internal/skydropx"
+	"skydropx-automator/internal/telegram"
+)
+
+type Options struct {
+	Token          string
+	APIBase        string        // vacío = API oficial de Telegram
+	AllowedChatIDs []int64       // chats autorizados (tú y tu vendedor)
+	DefaultValor   float64       // valor unitario si el mensaje no trae "Valor:"
+	StatePath      string        // archivo JSON con offset y órdenes pendientes
+	CheckEvery     time.Duration // cada cuánto revisar si hay guías nuevas
+}
+
+type Bot struct {
+	opts Options
+	tg   *telegram.Client
+	sky  *skydropx.Client
+	st   *State
+}
+
+func New(opts Options, sky *skydropx.Client) (*Bot, error) {
+	st, err := loadState(opts.StatePath)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo leer el estado del bot: %w", err)
+	}
+	return &Bot{opts: opts, tg: telegram.New(opts.Token, opts.APIBase), sky: sky, st: st}, nil
+}
+
+// Run atiende mensajes y revisa guías hasta que ctx termine.
+func (b *Bot) Run(ctx context.Context) {
+	go b.watchGuias(ctx)
+
+	for ctx.Err() == nil {
+		updates, err := b.tg.GetUpdates(ctx, b.st.Offset)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("bot: error consultando Telegram: %v", err)
+			sleep(ctx, 5*time.Second)
+			continue
+		}
+		for _, u := range updates {
+			if u.Message != nil {
+				b.handle(ctx, u.Message.Chat.ID, strings.TrimSpace(u.Message.Text))
+			}
+			if err := b.st.setOffset(u.UpdateID + 1); err != nil {
+				log.Printf("bot: no se pudo guardar el progreso: %v", err)
+			}
+		}
+	}
+}
+
+func (b *Bot) handle(ctx context.Context, chatID int64, text string) {
+	if !b.isAllowed(chatID) {
+		log.Printf("bot: chat no autorizado %d", chatID)
+		b.say(ctx, chatID, fmt.Sprintf("No estás autorizado para usar este bot. Tu ID de chat es <code>%d</code>. Pásaselo al administrador para que te dé acceso.", chatID))
+		return
+	}
+	if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
+		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, te mando el PDF aquí.")
+		return
+	}
+	b.createOrder(ctx, chatID, text)
+}
+
+func (b *Bot) isAllowed(chatID int64) bool {
+	for _, id := range b.opts.AllowedChatIDs {
+		if id == chatID {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Bot) createOrder(ctx context.Context, chatID int64, text string) {
+	data := parser.ParseWhatsAppMessage(text).Data
+	if data.ValorUnitario <= 0 {
+		data.ValorUnitario = b.opts.DefaultValor
+	}
+	if missing := parser.ValidateShipmentData(data); len(missing) > 0 {
+		b.say(ctx, chatID, "⚠️ Faltan datos para crear la orden: <b>"+html.EscapeString(strings.Join(missing, ", "))+"</b>. Envíame el mensaje completo de nuevo.")
+		return
+	}
+
+	b.say(ctx, chatID, "⏳ Creando la orden…")
+	createCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	res, err := b.sky.CreateShipment(createCtx, data)
+	if err != nil {
+		b.say(ctx, chatID, "❌ No se creó la orden: "+html.EscapeString(err.Error()))
+		return
+	}
+
+	if err := b.st.add(Pending{
+		OrderID:   res.ID,
+		ChatID:    chatID,
+		Nombre:    data.Nombre,
+		Destino:   fmt.Sprintf("%s, %s", data.Ciudad, data.Departamento),
+		CreatedAt: time.Now(),
+	}); err != nil {
+		log.Printf("bot: no se pudo guardar la orden pendiente %s: %v", res.ID, err)
+	}
+
+	msg := fmt.Sprintf(
+		"✅ <b>Orden creada</b>\n👤 %s\n📍 %s, %s\n💰 Valor unitario: %s\n\nCuando finalicen el envío en Skydropx, la guía y el PDF llegarán a este chat.",
+		html.EscapeString(data.Nombre), html.EscapeString(data.Ciudad), html.EscapeString(data.Departamento),
+		formatCOP(data.ValorUnitario),
+	)
+	if res.IsMock {
+		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
+	}
+	b.say(ctx, chatID, msg)
+}
+
+// watchGuias revisa periódicamente las órdenes pendientes y avisa cuando ya tienen guía.
+func (b *Bot) watchGuias(ctx context.Context) {
+	sleep(ctx, 30*time.Second)
+	ticker := time.NewTicker(b.opts.CheckEvery)
+	defer ticker.Stop()
+	for {
+		b.checkGuias(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (b *Bot) checkGuias(ctx context.Context) {
+	for _, p := range b.st.snapshotPending() {
+		if ctx.Err() != nil {
+			return
+		}
+		// La orden dice qué envíos tiene; cuando el envío ya tiene guía, se avisa y se quita de pendientes.
+		ids, err := b.sky.OrderShipmentIDs(ctx, p.OrderID)
+		if err != nil {
+			if !errors.Is(err, skydropx.ErrMockMode) {
+				log.Printf("bot: no se pudo consultar la orden %s: %v", p.OrderID, err)
+			}
+			continue
+		}
+		if sh, ok := b.guiaDeEnvios(ctx, ids); ok {
+			b.say(ctx, p.ChatID, sh.message())
+			if err := b.st.remove(p.OrderID); err != nil {
+				log.Printf("bot: no se pudo actualizar la orden %s: %v", p.OrderID, err)
+			}
+		}
+	}
+}
+
+// guiaDeEnvios busca el primer envío de la lista que ya tenga número de guía.
+func (b *Bot) guiaDeEnvios(ctx context.Context, ids []string) (shipmentInfo, bool) {
+	for _, id := range ids {
+		raw, err := b.sky.GetShipment(ctx, id)
+		if err != nil {
+			log.Printf("bot: no se pudo consultar el envío %s: %v", id, err)
+			continue
+		}
+		list, err := shipmentListFromDetail(raw)
+		if err != nil {
+			continue
+		}
+		for _, sh := range parseShipments(list) {
+			if sh.tracking != "" {
+				return sh, true
+			}
+		}
+	}
+	return shipmentInfo{}, false
+}
+
+// shipmentListFromDetail convierte GET /api/v1/shipments/{id} (un solo "data") en la forma de lista.
+func shipmentListFromDetail(raw json.RawMessage) (skydropx.ShipmentList, error) {
+	var d struct {
+		Data     json.RawMessage   `json:"data"`
+		Included []json.RawMessage `json:"included"`
+	}
+	if err := json.Unmarshal(raw, &d); err != nil || len(d.Data) == 0 {
+		return skydropx.ShipmentList{}, fmt.Errorf("respuesta de envío inesperada")
+	}
+	return skydropx.ShipmentList{Data: []json.RawMessage{d.Data}, Included: d.Included}, nil
+}
+
+func (b *Bot) say(ctx context.Context, chatID int64, html string) {
+	if err := b.tg.SendMessage(ctx, chatID, html); err != nil {
+		log.Printf("bot: no se pudo enviar el mensaje: %v", err)
+	}
+}
+
+func sleep(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
+	}
+}
+
+func formatCOP(v float64) string {
+	s := fmt.Sprintf("%.0f", v)
+	var out []byte
+	for i, c := range []byte(s) {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out = append(out, '.')
+		}
+		out = append(out, c)
+	}
+	return "$" + string(out)
+}
+
+// ---------- Lectura de envíos de Skydropx ----------
+
+type shipmentInfo struct {
+	orderID  string
+	tracking string
+	carrier  string
+	service  string
+	label    string
+	nombre   string
+	destino  string
+}
+
+type shipmentIndex []shipmentInfo
+
+func (idx shipmentIndex) byOrder(orderID string) (shipmentInfo, bool) {
+	for _, s := range idx {
+		if s.orderID == orderID && s.tracking != "" {
+			return s, true
+		}
+	}
+	return shipmentInfo{}, false
+}
+
+func (s shipmentInfo) message() string {
+	label := "PDF pendiente"
+	if s.label != "" {
+		label = fmt.Sprintf(`<a href="%s">Descargar guía (PDF)</a>`, html.EscapeString(s.label))
+	}
+	transportadora := strings.TrimSpace(s.carrier + " " + s.service)
+	return fmt.Sprintf(
+		"✅ <b>Guía lista</b>\n📦 Guía: <code>%s</code>\n👤 Cliente: %s\n📍 Destino: %s\n🚚 Transportadora: %s\n📄 %s",
+		html.EscapeString(s.tracking), html.EscapeString(s.nombre), html.EscapeString(s.destino),
+		html.EscapeString(transportadora), label,
+	)
+}
+
+func parseShipments(list skydropx.ShipmentList) shipmentIndex {
+	type shipment struct {
+		ID         string `json:"id"`
+		Attributes struct {
+			OrderID     string `json:"order_id"`
+			Tracking    string `json:"master_tracking_number"`
+			CarrierName string `json:"carrier_name"`
+			ServiceName string `json:"service_name"`
+		} `json:"attributes"`
+		Relationships struct {
+			AddressTo struct {
+				Data struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			} `json:"address_to"`
+			Packages struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			} `json:"packages"`
+		} `json:"relationships"`
+	}
+	type included struct {
+		ID         string `json:"id"`
+		Type       string `json:"type"`
+		Attributes struct {
+			Name     string `json:"name"`
+			City     string `json:"area_level2"`
+			State    string `json:"area_level1"`
+			LabelURL string `json:"label_url"`
+		} `json:"attributes"`
+	}
+
+	inc := map[string]included{}
+	for _, raw := range list.Included {
+		var i included
+		if json.Unmarshal(raw, &i) == nil {
+			inc[i.Type+":"+i.ID] = i
+		}
+	}
+
+	var out shipmentIndex
+	for _, raw := range list.Data {
+		var s shipment
+		if json.Unmarshal(raw, &s) != nil {
+			continue
+		}
+		info := shipmentInfo{
+			orderID:  s.Attributes.OrderID,
+			tracking: s.Attributes.Tracking,
+			carrier:  s.Attributes.CarrierName,
+			service:  s.Attributes.ServiceName,
+		}
+		if a, ok := inc["address:"+s.Relationships.AddressTo.Data.ID]; ok {
+			info.nombre = a.Attributes.Name
+			info.destino = strings.Trim(a.Attributes.City+", "+a.Attributes.State, ", ")
+		}
+		for _, p := range s.Relationships.Packages.Data {
+			if pkg, ok := inc["package:"+p.ID]; ok && pkg.Attributes.LabelURL != "" {
+				info.label = pkg.Attributes.LabelURL
+				break
+			}
+		}
+		out = append(out, info)
+	}
+	return out
+}
