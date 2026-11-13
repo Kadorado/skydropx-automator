@@ -23,6 +23,8 @@ type Client struct {
 	tokenMu     sync.Mutex
 	accessToken string
 	tokenExpiry time.Time
+
+	origin originTemplate
 }
 
 func NewClient(cfg config.Config) *Client {
@@ -133,6 +135,12 @@ func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) 
 		return domain.ShipmentResult{}, err
 	}
 
+	// La dirección guardada en Skydropx reemplaza los campos de origen enviados abajo.
+	originTemplateID, err := c.OriginTemplateID(ctx)
+	if err != nil {
+		return domain.ShipmentResult{}, err
+	}
+
 	destPostal := strings.TrimSpace(data.CodigoPostal)
 	if destPostal == "" {
 		destPostal = parser.LookupPostalCode(data.Ciudad)
@@ -175,18 +183,19 @@ func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) 
 			},
 		},
 		"shipper_address": map[string]any{
-			"address":         c.cfg.OriginStreet,
-			"internal_number": c.cfg.OriginInternalNumber,
-			"reference":       c.cfg.OriginReference,
-			"sector":          c.cfg.OriginNeighborhood,
-			"city":            c.cfg.OriginCity,
-			"state":           c.cfg.OriginState,
-			"postal_code":     c.cfg.OriginPostalCode,
-			"country":         c.cfg.OriginCountry,
-			"person_name":     c.cfg.OriginName,
-			"company":         c.cfg.OriginCompany,
-			"phone":           c.cfg.OriginPhone,
-			"email":           c.cfg.OriginEmail,
+			"address_template_id": originTemplateID,
+			"address":             c.cfg.OriginStreet,
+			"internal_number":     c.cfg.OriginInternalNumber,
+			"reference":           c.cfg.OriginReference,
+			"sector":              c.cfg.OriginNeighborhood,
+			"city":                c.cfg.OriginCity,
+			"state":               c.cfg.OriginState,
+			"postal_code":         c.cfg.OriginPostalCode,
+			"country":             c.cfg.OriginCountry,
+			"person_name":         c.cfg.OriginName,
+			"company":             c.cfg.OriginCompany,
+			"phone":               c.cfg.OriginPhone,
+			"email":               c.cfg.OriginEmail,
 		},
 		"recipient_address": map[string]any{
 			"address":       data.Direccion,

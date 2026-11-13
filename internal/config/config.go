@@ -18,6 +18,10 @@ type Config struct {
 	SkydropxWebhookSecret string
 	SkydropxWebhookHeader string
 
+	// Dirección de origen guardada en Skydropx (Mis direcciones): por ID o, si no, por alias.
+	OriginAddressTemplateID string
+	OriginAddressAlias      string
+
 	OriginName           string
 	OriginCompany        string
 	OriginStreet         string
@@ -60,9 +64,12 @@ func Load() Config {
 		SkydropxWebhookSecret: getEnv("SKYDROPX_WEBHOOK_SECRET", ""),
 		SkydropxWebhookHeader: getEnv("SKYDROPX_WEBHOOK_HEADER", "Authorization"),
 
+		OriginAddressTemplateID: getEnv("ORIGIN_ADDRESS_TEMPLATE_ID", ""),
+		OriginAddressAlias:      getEnv("ORIGIN_ADDRESS_ALIAS", "belu"),
+
 		// Origen: dirección verificada de la sucursal Belu Store en Skydropx (ID sucursal 232574).
 		OriginName:           getEnv("ORIGIN_NAME", "Kevin Dorado"),
-		OriginCompany:        getEnv("ORIGIN_COMPANY", "belu"),
+		OriginCompany:        getEnv("ORIGIN_COMPANY", "belu store"),
 		OriginStreet:         getEnv("ORIGIN_STREET", "CL 24A N57A 84"),
 		OriginInternalNumber: getEnv("ORIGIN_INTERNAL_NUMBER", "502"),
 		OriginReference:      getEnv("ORIGIN_REFERENCE", "apto 502 edificio montecarlo"),

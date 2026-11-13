@@ -19,6 +19,8 @@ Se leen desde el archivo `.env` (en local) o desde el panel de Render (en produc
 | `APP_PASSWORD` | Recomendada | Contraseña para entrar a la app. Sin ella, no pide login (solo para uso local). |
 | `TELEGRAM_BOT_TOKEN` | Para el bot | Token que te da @BotFather. Sin él, el bot queda desactivado. |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | Para el bot | IDs de chat autorizados, separados por coma. |
+| `ORIGIN_ADDRESS_ALIAS` | Opcional | Alias de la dirección de origen guardada en Skydropx (Mis direcciones). Por defecto `belu`. Esa dirección se usa como origen de todas las órdenes. |
+| `ORIGIN_ADDRESS_TEMPLATE_ID` | Opcional | ID (UUID) de esa dirección, si prefieres fijarlo en vez de buscarlo por alias. |
 | `SKYDROPX_WEBHOOK_SECRET` | Opcional | Clave HMAC (o token Bearer) del webhook de Skydropx. Con ella, la guía se avisa al instante en vez de esperar la revisión periódica. |
 | `SKYDROPX_WEBHOOK_HEADER` | Opcional | Nombre del encabezado de autenticación del webhook. Por defecto `Authorization`. |
 | `TELEGRAM_ADMIN_CHAT_IDS` | Opcional | IDs de chat que reciben un aviso cada vez que se crea una orden por el bot (por ejemplo, el tuyo). |
