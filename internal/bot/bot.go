@@ -147,7 +147,6 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 }
 
 // notifyAdmins avisa a los administradores que hay una orden nueva para gestionar en Skydropx.
-// No avisa al mismo chat que creó la orden.
 func (b *Bot) notifyAdmins(ctx context.Context, fromChatID int64, sender string, data domain.ShipmentData, isMock bool) {
 	if sender == "" {
 		sender = fmt.Sprintf("chat %d", fromChatID)
@@ -166,9 +165,7 @@ func (b *Bot) notifyAdmins(ctx context.Context, fromChatID int64, sender string,
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
 	}
 	for _, id := range b.opts.AdminChatIDs {
-		if id != fromChatID {
-			b.say(ctx, id, msg)
-		}
+		b.say(ctx, id, msg)
 	}
 }
 
