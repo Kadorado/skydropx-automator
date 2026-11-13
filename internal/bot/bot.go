@@ -299,13 +299,15 @@ func formatCOP(v float64) string {
 // ---------- Lectura de envíos de Skydropx ----------
 
 type shipmentInfo struct {
-	orderID  string
-	tracking string
-	carrier  string
-	service  string
-	label    string
-	nombre   string
-	destino  string
+	orderID     string
+	tracking    string
+	carrier     string
+	service     string
+	label       string
+	trackingURL string
+	onDelivery  string // estado del cobro contra entrega: pending | collected | vacío
+	nombre      string
+	destino     string
 }
 
 type shipmentIndex []shipmentInfo
@@ -319,17 +321,96 @@ func (idx shipmentIndex) byOrder(orderID string) (shipmentInfo, bool) {
 	return shipmentInfo{}, false
 }
 
+// message arma la guía con el mismo formato de "Mis envíos": *negrita* de WhatsApp y URLs completas,
+// para que el vendedor la copie tal cual al cliente.
 func (s shipmentInfo) message() string {
-	label := "PDF pendiente"
-	if s.label != "" {
-		label = fmt.Sprintf(`<a href="%s">Descargar guía (PDF)</a>`, html.EscapeString(s.label))
+	transportadora := carrierDisplayName(s.carrier)
+	if s.service != "" {
+		transportadora += " - " + s.service
 	}
-	transportadora := strings.TrimSpace(s.carrier + " " + s.service)
+	seguimiento := s.trackingURL
+	if seguimiento == "" {
+		seguimiento = carrierTrackingURL[carrierKey(s.carrier)]
+	}
+	if seguimiento == "" {
+		seguimiento = "pendiente"
+	}
+	pdf := s.label
+	if pdf == "" {
+		pdf = "pendiente (la guía aún no está disponible)"
+	}
 	return fmt.Sprintf(
-		"✅ <b>Guía lista</b>\n📦 Guía: <code>%s</code>\n👤 Cliente: %s\n📍 Destino: %s\n🚚 Transportadora: %s\n📄 %s",
+		"✅ *Envío creado con éxito*\n\n"+
+			"📦 *Guía:* %s\n"+
+			"👤 *Cliente:* %s\n"+
+			"📍 *Destino:* %s\n"+
+			"🚚 *Transportadora:* %s\n"+
+			"📊 *Estado:* pendiente de rastreo\n"+
+			"💰 *Cobro:* %s\n"+
+			"🔎 *Seguimiento:* %s\n\n"+
+			"📄 *Descarga la guía (PDF):*\n%s",
 		html.EscapeString(s.tracking), html.EscapeString(s.nombre), html.EscapeString(s.destino),
-		html.EscapeString(transportadora), label,
+		html.EscapeString(transportadora), cobroTexto(s.onDelivery),
+		html.EscapeString(seguimiento), html.EscapeString(pdf),
 	)
+}
+
+func cobroTexto(onDelivery string) string {
+	switch onDelivery {
+	case "collected":
+		return "Cobrado (pago contra entrega)"
+	case "pending":
+		return "Por cobrar (pago contra entrega)"
+	default:
+		return "No aplica"
+	}
+}
+
+var carrierNames = map[string]string{
+	"interrapidisimo": "Interrapidísimo",
+	"servientrega":    "Servientrega",
+	"coordinadora":    "Coordinadora",
+	"envia":           "Envía",
+	"fedex":           "FedEx",
+	"ups":             "UPS",
+}
+
+// carrierTrackingURL es la página de seguimiento de cada transportadora, si Skydropx no la envía.
+var carrierTrackingURL = map[string]string{
+	"interrapidisimo": "https://siguetuenvio.interrapidisimo.com/",
+	"servientrega":    "https://www.servientrega.com/wps/portal",
+	"envia":           "https://envia.co/",
+	"coordinadora":    "https://coordinadora.com/",
+}
+
+// carrierKey normaliza el nombre de la transportadora: "Interrapidísimo" -> "interrapidisimo".
+func carrierKey(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch r {
+		case 'á':
+			r = 'a'
+		case 'é':
+			r = 'e'
+		case 'í':
+			r = 'i'
+		case 'ó':
+			r = 'o'
+		case 'ú', 'ü':
+			r = 'u'
+		}
+		if r >= 'a' && r <= 'z' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func carrierDisplayName(name string) string {
+	if n, ok := carrierNames[carrierKey(name)]; ok {
+		return n
+	}
+	return strings.TrimSpace(name)
 }
 
 func parseShipments(list skydropx.ShipmentList) shipmentIndex {
@@ -340,6 +421,7 @@ func parseShipments(list skydropx.ShipmentList) shipmentIndex {
 			Tracking    string `json:"master_tracking_number"`
 			CarrierName string `json:"carrier_name"`
 			ServiceName string `json:"service_name"`
+			OnDelivery  string `json:"on_delivery_status"`
 		} `json:"attributes"`
 		Relationships struct {
 			AddressTo struct {
@@ -361,7 +443,8 @@ func parseShipments(list skydropx.ShipmentList) shipmentIndex {
 			Name     string `json:"name"`
 			City     string `json:"area_level2"`
 			State    string `json:"area_level1"`
-			LabelURL string `json:"label_url"`
+			LabelURL    string `json:"label_url"`
+			TrackingURL string `json:"tracking_url_provider"`
 		} `json:"attributes"`
 	}
 
@@ -380,10 +463,11 @@ func parseShipments(list skydropx.ShipmentList) shipmentIndex {
 			continue
 		}
 		info := shipmentInfo{
-			orderID:  s.Attributes.OrderID,
-			tracking: s.Attributes.Tracking,
-			carrier:  s.Attributes.CarrierName,
-			service:  s.Attributes.ServiceName,
+			orderID:    s.Attributes.OrderID,
+			tracking:   s.Attributes.Tracking,
+			carrier:    s.Attributes.CarrierName,
+			service:    s.Attributes.ServiceName,
+			onDelivery: s.Attributes.OnDelivery,
 		}
 		if a, ok := inc["address:"+s.Relationships.AddressTo.Data.ID]; ok {
 			info.nombre = a.Attributes.Name
@@ -392,6 +476,7 @@ func parseShipments(list skydropx.ShipmentList) shipmentIndex {
 		for _, p := range s.Relationships.Packages.Data {
 			if pkg, ok := inc["package:"+p.ID]; ok && pkg.Attributes.LabelURL != "" {
 				info.label = pkg.Attributes.LabelURL
+				info.trackingURL = pkg.Attributes.TrackingURL
 				break
 			}
 		}

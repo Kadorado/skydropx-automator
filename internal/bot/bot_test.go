@@ -48,7 +48,7 @@ func TestGuiaListaSeEncuentraPorOrden(t *testing.T) {
 	}
 
 	msg := sh.message()
-	for _, esperado := range []string{"Guía lista", "240000000001", "Cliente de Prueba", "Descargar guía (PDF)"} {
+	for _, esperado := range []string{"Envío creado con éxito", "240000000001", "Cliente de Prueba", "Interrapidísimo - Mensajeria Express", "https://siguetuenvio.interrapidisimo.com/", "https://ejemplo.test/guia.pdf"} {
 		if !strings.Contains(msg, esperado) {
 			t.Errorf("el mensaje no incluye %q: %s", esperado, msg)
 		}
