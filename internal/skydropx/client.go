@@ -127,7 +127,14 @@ func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) 
 		return domain.ShipmentResult{}, err
 	}
 	if !coverage.OK {
-		return domain.ShipmentResult{}, fmt.Errorf("Dirección sin cobertura: %s", coverage.Message)
+		postal := strings.TrimSpace(data.CodigoPostal)
+		if postal == "" {
+			postal = parser.LookupPostalCode(data.Ciudad)
+		}
+		if strings.Contains(coverage.Message, "postal_code") {
+			return domain.ShipmentResult{}, fmt.Errorf("Skydropx no reconoce el código postal %s de %s. Agrega al mensaje la línea \"Código postal: XXXXXX\" con el código correcto (consúltalo en codigopostal.gov.co).", postal, data.Ciudad)
+		}
+		return domain.ShipmentResult{}, fmt.Errorf("Dirección sin cobertura (código postal %s): %s", postal, coverage.Message)
 	}
 
 	token, err := c.getAccessToken(ctx)
