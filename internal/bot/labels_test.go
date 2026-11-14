@@ -28,6 +28,8 @@ type fakeAPIs struct {
 	shipments int      // veces que se creó un envío
 	document  []byte   // PDF enviado con sendDocument
 	alias     []string // alias de las direcciones guardadas
+	saldo     float64  // saldo que devuelve /finance/credits
+	sinSaldo  bool     // si es true, crear el envío responde "Fondos insuficientes"
 	caption   string
 	srvURL    string
 }
@@ -81,10 +83,21 @@ func (f *fakeAPIs) handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/quotations/q1", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"is_completed":true,"rates":[{"id":"r1","success":true,"provider_name":"interrapidisimo","total":"14500","days":2}]}`)
 	})
+	mux.HandleFunc("GET /api/v1/finance/credits", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		fmt.Fprintf(w, `{"data":{"balance":%v,"currency":"COP"},"meta":{"country_code":"CO"}}`, f.saldo)
+	})
 	mux.HandleFunc("POST /api/v1/shipments/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.sinSaldo {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = io.WriteString(w, `{"errors":"Fondos insuficientes","error_code":"INSUFFICIENT_CREDITS"}`)
+			return
+		}
 		f.shipments++
-		f.mu.Unlock()
+		f.saldo -= 14500
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"data":{"id":"shp-1"}}`)
 	})
@@ -123,7 +136,7 @@ func (f *fakeAPIs) handler() http.Handler {
 }
 
 func newTestBot(t *testing.T) (*Bot, *fakeAPIs) {
-	f := &fakeAPIs{}
+	f := &fakeAPIs{saldo: 100000}
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
 	f.srvURL = srv.URL
@@ -160,6 +173,9 @@ func TestGenerarYConfirmarGuia(t *testing.T) {
 	if !strings.Contains(last, "cobra <b>$74.500</b> al recibir (producto $60.000 + envío $14.500)") {
 		t.Fatalf("debe mostrar el cobro contra entrega con el envío incluido, llegó: %s", last)
 	}
+	if !strings.Contains(last, "Saldo actual: $100.000") {
+		t.Fatalf("la cotización debe mostrar el saldo, llegó: %s", last)
+	}
 	if !strings.Contains(last, "$14.500") || !strings.Contains(last, "Sin Protección Plus") {
 		t.Fatalf("la cotización debería mostrar precio y protección, llegó: %s", last)
 	}
@@ -174,6 +190,9 @@ func TestGenerarYConfirmarGuia(t *testing.T) {
 	}
 	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "Guía solicitada") || !strings.Contains(last, "Dirección guardada") {
 		t.Fatalf("debería confirmar la guía y la dirección guardada, llegó: %s", last)
+	}
+	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "Saldo restante: <b>$85.500</b>") {
+		t.Fatalf("después de la guía debe mostrar el saldo restante, llegó: %s", last)
 	}
 	if strings.Join(f.alias, ",") != "Cliente de Prueba" {
 		t.Fatalf("la dirección debe guardarse una vez con el nombre del cliente, alias = %v", f.alias)
@@ -309,5 +328,28 @@ func TestOrdenNuevaLlegaAAmbosGruposYBotonSoloAGestion(t *testing.T) {
 	}
 	if got, ok := enviados[-100]; !ok || got != "" {
 		t.Fatalf("el grupo del vendedor debe recibir la orden sin botones, recibió %q (ok=%v)", got, ok)
+	}
+}
+
+func TestSaldoInsuficiente(t *testing.T) {
+	b, f := newTestBot(t)
+	f.saldo = 5000
+	ctx := context.Background()
+	data := domain.ShipmentData{Nombre: "Cliente", Ciudad: "Medellín", Departamento: "Antioquia", CodigoPostal: "050001", ValorUnitario: 60000}
+	_ = b.st.add(Pending{OrderID: "orden-4", Data: &data})
+
+	b.handleCallback(ctx, callback("g:orden-4"))
+	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "Saldo insuficiente:</b> tienes $5.000 y la guía cuesta $14.500") {
+		t.Fatalf("debe avisar antes de confirmar que no alcanza, llegó: %s", last)
+	}
+
+	f.sinSaldo = true
+	b.handleCallback(ctx, callback("c:orden-4"))
+	last := f.edits[len(f.edits)-1]
+	if !strings.Contains(last, "saldo insuficiente en Skydropx") || strings.Join(f.buttons, ",") != "g:orden-4" {
+		t.Fatalf("debe explicar el rechazo por saldo y ofrecer reintentar, llegó: %s (botones %v)", last, f.buttons)
+	}
+	if p, _ := b.st.getPending("orden-4"); p.LabelRequested {
+		t.Fatal("si Skydropx rechaza, la orden debe poder reintentarse")
 	}
 }

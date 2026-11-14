@@ -105,12 +105,45 @@ func (b *Bot) cotizarGuia(ctx context.Context, callbackID string, chatID, msgID 
 	if q.Days > 0 {
 		dias = fmt.Sprintf(" · %d día(s)", q.Days)
 	}
-	text := fmt.Sprintf("%s\n\n🚚 <b>Interrapidísimo</b>%s · <b>%s</b>%s\n%s\n🛡️ Sin Protección Plus\n\n¿Genero la guía?",
-		base, servicio(q.Service), formatCOP(q.Total), dias, cobroContraEntrega(*p.Data, q.Total))
+	text := fmt.Sprintf("%s\n\n🚚 <b>Interrapidísimo</b>%s · <b>%s</b>%s\n%s\n🛡️ Sin Protección Plus\n%s\n\n¿Genero la guía?",
+		base, servicio(q.Service), formatCOP(q.Total), dias, cobroContraEntrega(*p.Data, q.Total), b.saldoAntes(qctx, q.Total))
 	_ = b.tg.EditMessage(ctx, chatID, msgID, text, [][]telegram.Button{telegram.Row(
 		telegram.Button{Text: "✅ Confirmar", Data: actConfirmar + ":" + p.OrderID},
 		telegram.Button{Text: "❌ Cancelar", Data: actCancelar + ":" + p.OrderID},
 	)})
+}
+
+// saldoAntes muestra el saldo antes de confirmar y avisa si no alcanza para la guía.
+func (b *Bot) saldoAntes(ctx context.Context, costo float64) string {
+	cr, err := b.sky.Credits(ctx)
+	if err != nil {
+		log.Printf("bot: no se pudo consultar el saldo: %v", err)
+		return "💳 Saldo: no se pudo consultar"
+	}
+	if cr.Balance < costo {
+		return fmt.Sprintf("⚠️ <b>Saldo insuficiente:</b> tienes %s y la guía cuesta %s. Recarga en Skydropx antes de confirmar.", formatCOP(cr.Balance), formatCOP(costo))
+	}
+	return "💳 Saldo actual: " + formatCOP(cr.Balance)
+}
+
+// saldoDespues muestra lo que quedó después de la guía y avisa si ya no alcanza para otra igual.
+func (b *Bot) saldoDespues(ctx context.Context, costo float64) string {
+	cr, err := b.sky.Credits(ctx)
+	if err != nil {
+		log.Printf("bot: no se pudo consultar el saldo: %v", err)
+		return "💳 Saldo restante: no se pudo consultar"
+	}
+	msg := "💳 Saldo restante: <b>" + formatCOP(cr.Balance) + "</b>"
+	if cr.Balance < costo {
+		msg += "\n⚠️ No alcanza para otra guía como esta. Recarga en Skydropx."
+	}
+	return msg
+}
+
+// esSinSaldo reconoce el rechazo de Skydropx por falta de créditos.
+func esSinSaldo(err error) bool {
+	m := strings.ToLower(err.Error())
+	return strings.Contains(m, "fondos insuficientes") || strings.Contains(m, "insufficient_credits") || strings.Contains(m, "saldo insuficiente")
 }
 
 // cobroContraEntrega explica lo que la transportadora le cobra al cliente: el producto más el envío.
@@ -166,7 +199,11 @@ func (b *Bot) confirmarGuia(ctx context.Context, callbackID string, chatID, msgI
 		if _, serr := b.st.updatePending(p.OrderID, func(p *Pending) { p.LabelRequested = false; p.Quote = nil }); serr != nil {
 			log.Printf("bot: no se pudo guardar la orden %s: %v", p.OrderID, serr)
 		}
-		_ = b.tg.EditMessage(ctx, chatID, msgID, base+"\n\n❌ No se generó la guía: "+html.EscapeString(err.Error()), botonGenerarReintentar(p.OrderID))
+		msg := "❌ No se generó la guía: " + html.EscapeString(err.Error())
+		if esSinSaldo(err) {
+			msg = "❌ <b>No se generó la guía: saldo insuficiente en Skydropx.</b>\n" + b.saldoAntes(cctx, p.Quote.Total) + "\nRecarga en Skydropx y toca Reintentar."
+		}
+		_ = b.tg.EditMessage(ctx, chatID, msgID, base+"\n\n"+msg, botonGenerarReintentar(p.OrderID))
 		return
 	}
 	// La dirección del cliente queda en Mis direcciones con su nombre; si falla, la guía sigue igual.
@@ -176,8 +213,8 @@ func (b *Bot) confirmarGuia(ctx context.Context, callbackID string, chatID, msgI
 		direccion = "⚠️ No se pudo guardar la dirección en Mis direcciones: " + html.EscapeString(err.Error())
 	}
 	_ = b.tg.EditMessage(ctx, chatID, msgID, fmt.Sprintf(
-		"%s\n\n✅ <b>Guía solicitada</b> con Interrapidísimo (%s, sin Protección Plus).\n%s\n%s\n\nEn cuanto Skydropx la genere, llega al grupo del vendedor.",
-		base, formatCOP(p.Quote.Total), cobroContraEntrega(*p.Data, p.Quote.Total), direccion), nil)
+		"%s\n\n✅ <b>Guía solicitada</b> con Interrapidísimo (%s, sin Protección Plus).\n%s\n%s\n%s\n\nEn cuanto Skydropx la genere, llega al grupo del vendedor.",
+		base, formatCOP(p.Quote.Total), cobroContraEntrega(*p.Data, p.Quote.Total), direccion, b.saldoDespues(cctx, p.Quote.Total)), nil)
 
 	// Skydropx tarda unos segundos en generar la guía: se revisa pronto en vez de esperar la revisión periódica.
 	go func() {
