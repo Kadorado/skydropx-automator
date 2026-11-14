@@ -121,22 +121,6 @@ func (c *Client) getAccessToken(ctx context.Context) (string, error) {
 // createLiveOrder crea una orden en Skydropx (POST /api/v1/orders/) con origen y destinatario.
 // No cotiza ni emite guía: la orden queda lista para que se finalice a mano en Skydropx.
 func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) (domain.ShipmentResult, error) {
-	// No se crea la orden si ninguna transportadora cubre la dirección.
-	coverage, err := c.ValidateCoverage(ctx, data)
-	if err != nil {
-		return domain.ShipmentResult{}, err
-	}
-	if !coverage.OK {
-		postal := strings.TrimSpace(data.CodigoPostal)
-		if postal == "" {
-			postal = parser.LookupPostalCode(data.Ciudad)
-		}
-		if strings.Contains(coverage.Message, "postal_code") {
-			return domain.ShipmentResult{}, fmt.Errorf("Skydropx no reconoce el código postal %s de %s. Agrega al mensaje la línea \"Código postal: XXXXXX\" con el código correcto (consúltalo en codigopostal.gov.co).", postal, data.Ciudad)
-		}
-		return domain.ShipmentResult{}, fmt.Errorf("Dirección sin cobertura (código postal %s): %s", postal, coverage.Message)
-	}
-
 	token, err := c.getAccessToken(ctx)
 	if err != nil {
 		return domain.ShipmentResult{}, err
