@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"skydropx-automator/internal/domain"
+	"skydropx-automator/internal/skydropx"
 )
 
 // Pending es una orden creada por el bot que todavía no tiene guía.
@@ -15,6 +18,12 @@ type Pending struct {
 	Nombre    string    `json:"nombre"`
 	Destino   string    `json:"destino"`
 	CreatedAt time.Time `json:"created_at"`
+
+	// Para generar la guía desde Telegram (vacíos en órdenes creadas antes de esta función).
+	Sender         string               `json:"sender,omitempty"`
+	Data           *domain.ShipmentData `json:"data,omitempty"`
+	Quote          *skydropx.LabelQuote `json:"quote,omitempty"`
+	LabelRequested bool                 `json:"label_requested,omitempty"`
 }
 
 // Recent es una orden creada hace poco, para detectar pedidos repetidos.
@@ -87,6 +96,36 @@ func (s *State) remove(orderID string) error {
 	s.Pending = kept
 	s.mu.Unlock()
 	return s.save()
+}
+
+// getPending devuelve una copia de la orden pendiente.
+func (s *State) getPending(orderID string) (Pending, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, p := range s.Pending {
+		if p.OrderID == orderID {
+			return p, true
+		}
+	}
+	return Pending{}, false
+}
+
+// updatePending modifica la orden pendiente y guarda. Devuelve false si ya no está pendiente.
+func (s *State) updatePending(orderID string, fn func(*Pending)) (bool, error) {
+	s.mu.Lock()
+	found := false
+	for i := range s.Pending {
+		if s.Pending[i].OrderID == orderID {
+			fn(&s.Pending[i])
+			found = true
+			break
+		}
+	}
+	s.mu.Unlock()
+	if !found {
+		return false, nil
+	}
+	return true, s.save()
 }
 
 func (s *State) setOffset(offset int64) error {

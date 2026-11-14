@@ -12,6 +12,10 @@ func TestValidWebhookAuth(t *testing.T) {
 	mac := hmac.New(sha512.New, []byte("secreto"))
 	mac.Write(body)
 	firma := hex.EncodeToString(mac.Sum(nil))
+	alterada := "ff" + firma[2:]
+	if firma[:2] == "ff" {
+		alterada = "00" + firma[2:]
+	}
 
 	casos := []struct {
 		nombre, header, secret string
@@ -19,7 +23,7 @@ func TestValidWebhookAuth(t *testing.T) {
 	}{
 		{"hmac correcto", "HMAC " + firma, "secreto", true},
 		{"hmac con otra clave", "HMAC " + firma, "otra", false},
-		{"hmac alterado", "HMAC 00" + firma[2:], "secreto", false},
+		{"hmac alterado", "HMAC " + alterada, "secreto", false},
 		{"bearer correcto", "Bearer secreto", "secreto", true},
 		{"bearer incorrecto", "Bearer otro", "secreto", false},
 		{"sin encabezado", "", "secreto", false},

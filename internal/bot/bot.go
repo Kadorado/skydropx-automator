@@ -24,7 +24,8 @@ type Options struct {
 	Token          string
 	APIBase        string        // vacío = API oficial de Telegram
 	AllowedChatIDs []int64       // chats autorizados (tú y tu vendedor)
-	AdminChatIDs   []int64       // chats que reciben aviso de cada orden nueva y de cada guía lista
+	AdminChatIDs   []int64       // grupo donde se publica cada guía lista
+	GestionChatIDs []int64       // grupo privado que recibe las órdenes nuevas con el botón de generar guía y usa /imprimir
 	DefaultValor   float64       // valor unitario si el mensaje no trae "Valor:"
 	StatePath      string        // archivo JSON con offset y órdenes pendientes
 	CheckEvery     time.Duration // cada cuánto revisar si hay guías nuevas
@@ -65,6 +66,9 @@ func (b *Bot) Run(ctx context.Context) {
 			if u.Message != nil {
 				b.handle(ctx, u.Message.Chat.ID, senderName(u.Message.From), strings.TrimSpace(u.Message.Text))
 			}
+			if u.CallbackQuery != nil {
+				b.handleCallback(ctx, u.CallbackQuery)
+			}
 			if err := b.st.setOffset(u.UpdateID + 1); err != nil {
 				log.Printf("bot: no se pudo guardar el progreso: %v", err)
 			}
@@ -73,13 +77,27 @@ func (b *Bot) Run(ctx context.Context) {
 }
 
 func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
+	// Tu grupo de gestión: /imprimir y ayuda. Las guías se generan con los botones de cada orden.
+	if b.isGestion(chatID) {
+		if strings.HasPrefix(text, "/imprimir") {
+			b.imprimirHoy(ctx, chatID)
+			return
+		}
+		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
+			b.say(ctx, chatID, "Aquí llegan las órdenes nuevas con el botón 🚚 para generar la guía con Interrapidísimo.")
+			return
+		}
+		if !b.isAllowed(chatID) {
+			return // en el grupo de gestión no se crean órdenes
+		}
+	}
 	if !b.isAllowed(chatID) {
 		log.Printf("bot: chat no autorizado %d", chatID)
 		b.say(ctx, chatID, fmt.Sprintf("No estás autorizado para usar este bot. Tu ID de chat es <code>%d</code>. Pásaselo al administrador para que te dé acceso.", chatID))
 		return
 	}
 	if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, la mando "+b.guiaDestino()+".")
+		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, la mando "+b.guiaDestino()+".\n\n🖨️ /imprimir arma las guías de hoy en hojas carta de 4 para imprimir.")
 		return
 	}
 	b.createOrder(ctx, chatID, sender, text)
@@ -190,6 +208,8 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 		Nombre:    data.Nombre,
 		Destino:   fmt.Sprintf("%s, %s", data.Ciudad, data.Departamento),
 		CreatedAt: time.Now(),
+		Sender:    senderOrChat(sender, chatID),
+		Data:      &data,
 	}); err != nil {
 		log.Printf("bot: no se pudo guardar la orden pendiente %s: %v", res.ID, err)
 	}
@@ -206,29 +226,29 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
 	}
 	b.say(ctx, chatID, msg)
-	b.notifyAdmins(ctx, chatID, sender, data, res.IsMock)
+	b.notifyAdmins(ctx, senderOrChat(sender, chatID), data, res.ID, res.IsMock)
 }
 
-// notifyAdmins avisa a los administradores que hay una orden nueva para gestionar en Skydropx.
-func (b *Bot) notifyAdmins(ctx context.Context, fromChatID int64, sender string, data domain.ShipmentData, isMock bool) {
+func senderOrChat(sender string, chatID int64) string {
 	if sender == "" {
-		sender = fmt.Sprintf("chat %d", fromChatID)
+		return fmt.Sprintf("chat %d", chatID)
 	}
-	qty := data.Cantidad
-	if qty < 1 {
-		qty = 1
-	}
-	msg := fmt.Sprintf(
-		"🆕 <b>Nueva orden para gestionar</b>\n🧑‍💼 Creada por: %s\n👤 %s\n📞 %s\n📍 %s, %s\n🏠 %s\n📦 Cantidad: %d\n💰 Cobro contra entrega: %s\n\nEntra a Skydropx para escoger transportadora y generar la guía.",
-		html.EscapeString(sender), html.EscapeString(data.Nombre), html.EscapeString(data.Telefono),
-		html.EscapeString(data.Ciudad), html.EscapeString(data.Departamento), html.EscapeString(data.Direccion),
-		qty, formatCOP(data.ValorUnitario*float64(qty)),
-	)
+	return sender
+}
+
+// notifyAdmins avisa al grupo de gestión que hay una orden nueva, con el botón para generar la guía.
+func (b *Bot) notifyAdmins(ctx context.Context, sender string, data domain.ShipmentData, orderID string, isMock bool) {
+	msg := adminOrderText(sender, data)
+	var buttons [][]telegram.Button
 	if isMock {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
+	} else {
+		buttons = botonGenerar(orderID)
 	}
-	for _, id := range b.opts.AdminChatIDs {
-		b.say(ctx, id, msg)
+	for _, id := range b.gestionChats() {
+		if _, err := b.tg.SendMessageWithButtons(ctx, id, msg, buttons); err != nil {
+			log.Printf("bot: no se pudo avisar la orden nueva: %v", err)
+		}
 	}
 }
 
@@ -492,9 +512,9 @@ func parseShipments(list skydropx.ShipmentList) shipmentIndex {
 		ID         string `json:"id"`
 		Type       string `json:"type"`
 		Attributes struct {
-			Name     string `json:"name"`
-			City     string `json:"area_level2"`
-			State    string `json:"area_level1"`
+			Name        string `json:"name"`
+			City        string `json:"area_level2"`
+			State       string `json:"area_level1"`
 			LabelURL    string `json:"label_url"`
 			TrackingURL string `json:"tracking_url_provider"`
 		} `json:"attributes"`

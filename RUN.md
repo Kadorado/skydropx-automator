@@ -23,7 +23,8 @@ Se leen desde el archivo `.env` (en local) o desde el panel de Render (en produc
 | `ORIGIN_ADDRESS_TEMPLATE_ID` | Opcional | ID (UUID) de esa dirección, si prefieres fijarlo en vez de buscarlo por alias. |
 | `SKYDROPX_WEBHOOK_SECRET` | Opcional | Clave HMAC (o token Bearer) del webhook de Skydropx. Con ella, la guía se avisa al instante en vez de esperar la revisión periódica. |
 | `SKYDROPX_WEBHOOK_HEADER` | Opcional | Nombre del encabezado de autenticación del webhook. Por defecto `Authorization`. |
-| `TELEGRAM_ADMIN_CHAT_IDS` | Opcional | IDs de chat que reciben un aviso cada vez que se crea una orden por el bot (por ejemplo, el tuyo). |
+| `TELEGRAM_ADMIN_CHAT_IDS` | Opcional | IDs del grupo donde se publica cada guía lista, con el formato para copiar al cliente. |
+| `TELEGRAM_GESTION_CHAT_IDS` | Opcional | IDs de tu grupo privado de gestión: recibe cada orden nueva con el botón para generar la guía con Interrapidísimo y acepta `/imprimir`. Si no se configura, se usa `TELEGRAM_ADMIN_CHAT_IDS`. |
 | `DEFAULT_VALOR_UNITARIO` | No | Valor unitario si el mensaje no trae `Valor:`. Por defecto `60000`. |
 | `GUIA_CHECK_MINUTES` | No | Cada cuántos minutos se revisan guías nuevas. Por defecto `5`. |
 | `BOT_STATE_FILE` | No | Archivo de estado del bot. Local: `data/bot_state.json`. Render: `/var/data/bot_state.json`. |

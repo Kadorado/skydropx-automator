@@ -1,0 +1,229 @@
+package bot
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"skydropx-automator/internal/config"
+	"skydropx-automator/internal/domain"
+	"skydropx-automator/internal/skydropx"
+	"skydropx-automator/internal/telegram"
+)
+
+// fakeAPIs simula Telegram y Skydropx en un solo servidor y registra lo que el bot envía.
+type fakeAPIs struct {
+	mu        sync.Mutex
+	edits     []string // textos de editMessageText
+	buttons   []string // datos de los botones del último mensaje editado
+	shipments int      // veces que se creó un envío
+	document  []byte   // PDF enviado con sendDocument
+	caption   string
+	srvURL    string
+}
+
+func (f *fakeAPIs) handler() http.Handler {
+	mux := http.NewServeMux()
+	// Telegram
+	mux.HandleFunc("POST /botTOKEN/editMessageText", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text   string `json:"text"`
+			Markup struct {
+				Keyboard [][]telegram.Button `json:"inline_keyboard"`
+			} `json:"reply_markup"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.edits = append(f.edits, body.Text)
+		f.buttons = nil
+		for _, row := range body.Markup.Keyboard {
+			for _, b := range row {
+				f.buttons = append(f.buttons, b.Data)
+			}
+		}
+		f.mu.Unlock()
+		_, _ = io.WriteString(w, `{"ok":true,"result":{}}`)
+	})
+	mux.HandleFunc("POST /botTOKEN/answerCallbackQuery", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"ok":true,"result":true}`)
+	})
+	mux.HandleFunc("POST /botTOKEN/sendMessage", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
+	})
+	mux.HandleFunc("POST /botTOKEN/sendDocument", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(10 << 20); err == nil {
+			file, _, _ := r.FormFile("document")
+			data, _ := io.ReadAll(file)
+			f.mu.Lock()
+			f.document = data
+			f.caption = r.FormValue("caption")
+			f.mu.Unlock()
+		}
+		_, _ = io.WriteString(w, `{"ok":true,"result":{}}`)
+	})
+	// Skydropx
+	mux.HandleFunc("POST /api/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"access_token":"tok","expires_in":7200}`)
+	})
+	mux.HandleFunc("POST /api/v1/quotations", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":"q1"}`)
+	})
+	mux.HandleFunc("GET /api/v1/quotations/q1", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"is_completed":true,"rates":[{"id":"r1","success":true,"provider_name":"interrapidisimo","total":"14500","days":2}]}`)
+	})
+	mux.HandleFunc("POST /api/v1/shipments/", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.shipments++
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = io.WriteString(w, `{"data":{"id":"shp-1"}}`)
+	})
+	mux.HandleFunc("GET /api/v1/shipments/shp-1", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":{"id":"shp-1","attributes":{}}}`) // la guía aún no está lista
+	})
+	mux.HandleFunc("GET /api/v1/shipments", func(w http.ResponseWriter, r *http.Request) {
+		hoy := time.Now().In(colombiaTZ).Format(time.RFC3339)
+		var data, inc []string
+		for i := 1; i <= 5; i++ {
+			data = append(data, fmt.Sprintf(`{"id":"s%d","attributes":{"created_at":%q,"master_tracking_number":"G%d"},"relationships":{"packages":{"data":[{"id":"p%d"}]}}}`, i, hoy, i, i))
+			inc = append(inc, fmt.Sprintf(`{"id":"p%d","type":"package","attributes":{"label_url":"%s/labels/%d.pdf"}}`, i, f.srvURL, i))
+		}
+		fmt.Fprintf(w, `{"data":[%s],"included":[%s],"meta":{"total_pages":1}}`, strings.Join(data, ","), strings.Join(inc, ","))
+	})
+	mux.HandleFunc("GET /labels/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(fakeLabelPDF())
+	})
+	return mux
+}
+
+func newTestBot(t *testing.T) (*Bot, *fakeAPIs) {
+	f := &fakeAPIs{}
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	f.srvURL = srv.URL
+	sky := skydropx.NewClient(config.Config{
+		SkydropxMode: "live", SkydropxBaseURL: srv.URL, SkydropxClientID: "id", SkydropxClientSecret: "secret",
+		OriginAddressTemplateID: "tpl", OriginCountry: "CO", OriginEmail: "tienda@example.com",
+		DefaultWeightKg: 1, DefaultLengthCm: 10, DefaultWidthCm: 10, DefaultHeightCm: 15, DefaultContent: "datafono",
+	})
+	b, err := New(Options{
+		Token: "TOKEN", APIBase: srv.URL, AdminChatIDs: []int64{-100},
+		StatePath: filepath.Join(t.TempDir(), "state.json"), CheckEvery: time.Hour,
+	}, sky)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b, f
+}
+
+func callback(data string) *telegram.CallbackQuery {
+	return &telegram.CallbackQuery{ID: "cb", Data: data, Message: &telegram.Message{MessageID: 7, Chat: telegram.Chat{ID: -100}}}
+}
+
+func TestGenerarYConfirmarGuia(t *testing.T) {
+	b, f := newTestBot(t)
+	ctx := context.Background()
+	data := domain.ShipmentData{Nombre: "Cliente de Prueba", Telefono: "3000000000", Departamento: "Antioquia",
+		Ciudad: "Medellín", Direccion: "Calle 1", Cantidad: 1, ValorUnitario: 60000, CodigoPostal: "050001"}
+	if err := b.st.add(Pending{OrderID: "orden-1", ChatID: 1, Sender: "Vendedor", Data: &data, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	b.handleCallback(ctx, callback("g:orden-1"))
+	last := f.edits[len(f.edits)-1]
+	if !strings.Contains(last, "$14.500") || !strings.Contains(last, "Sin Protección Plus") {
+		t.Fatalf("la cotización debería mostrar precio y protección, llegó: %s", last)
+	}
+	if strings.Join(f.buttons, ",") != "c:orden-1,x:orden-1" {
+		t.Fatalf("botones = %v, se esperaba Confirmar y Cancelar", f.buttons)
+	}
+
+	b.handleCallback(ctx, callback("c:orden-1"))
+	b.handleCallback(ctx, callback("c:orden-1")) // doble toque
+	if f.shipments != 1 {
+		t.Fatalf("se crearon %d envíos, debe ser 1 aunque se toque dos veces", f.shipments)
+	}
+	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "Guía solicitada") {
+		t.Fatalf("debería confirmar la guía solicitada, llegó: %s", last)
+	}
+}
+
+func TestCancelarVuelveAlBotonGenerar(t *testing.T) {
+	b, f := newTestBot(t)
+	ctx := context.Background()
+	data := domain.ShipmentData{Nombre: "Cliente", Ciudad: "Medellín", Departamento: "Antioquia", CodigoPostal: "050001", ValorUnitario: 60000}
+	_ = b.st.add(Pending{OrderID: "orden-2", Data: &data})
+
+	b.handleCallback(ctx, callback("g:orden-2"))
+	b.handleCallback(ctx, callback("x:orden-2"))
+	if strings.Join(f.buttons, ",") != "g:orden-2" {
+		t.Fatalf("después de cancelar debe quedar el botón de generar, quedó %v", f.buttons)
+	}
+	if p, _ := b.st.getPending("orden-2"); p.Quote != nil {
+		t.Fatal("cancelar debe borrar la cotización")
+	}
+}
+
+func TestImprimirHoyEnviaHojas(t *testing.T) {
+	b, f := newTestBot(t)
+	b.imprimirHoy(context.Background(), -100)
+	if len(f.document) == 0 {
+		t.Fatal("no se envió el PDF")
+	}
+	if !bytes.HasPrefix(f.document, []byte("%PDF")) {
+		t.Fatal("lo enviado no es un PDF")
+	}
+	if !strings.Contains(f.caption, "5 guía(s)") || !strings.Contains(f.caption, "2 hoja(s)") {
+		t.Fatalf("5 guías deben ir en 2 hojas, caption: %s", f.caption)
+	}
+}
+
+// fakeLabelPDF arma un PDF mínimo con el formato de la guía de Interrapidísimo (A4 horizontal girada 90°).
+func fakeLabelPDF() []byte {
+	content := "BT /F1 24 Tf 40 300 Td (GUIA DE PRUEBA) Tj ET"
+	objs := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Rotate 90 /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(content), content),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}
+	var buf bytes.Buffer
+	buf.WriteString("%PDF-1.4\n")
+	offsets := make([]int, len(objs))
+	for i, o := range objs {
+		offsets[i] = buf.Len()
+		fmt.Fprintf(&buf, "%d 0 obj\n%s\nendobj\n", i+1, o)
+	}
+	xref := buf.Len()
+	fmt.Fprintf(&buf, "xref\n0 %d\n0000000000 65535 f \n", len(objs)+1)
+	for _, off := range offsets {
+		fmt.Fprintf(&buf, "%010d 00000 n \n", off)
+	}
+	fmt.Fprintf(&buf, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(objs)+1, xref)
+	return buf.Bytes()
+}
+
+func TestBotonesSoloEnGrupoDeGestion(t *testing.T) {
+	b, f := newTestBot(t)
+	b.opts.GestionChatIDs = []int64{-200} // el grupo -100 (vendedor) ya no gestiona guías
+	data := domain.ShipmentData{Nombre: "Cliente", Ciudad: "Medellín", Departamento: "Antioquia", CodigoPostal: "050001", ValorUnitario: 60000}
+	_ = b.st.add(Pending{OrderID: "orden-3", Data: &data})
+
+	b.handleCallback(context.Background(), callback("g:orden-3")) // tocado desde -100
+	if len(f.edits) != 0 {
+		t.Fatalf("un botón del grupo del vendedor no debe cotizar, se editó: %v", f.edits)
+	}
+	if !b.isGestion(-200) || b.isGestion(-100) {
+		t.Fatal("solo -200 debe ser el grupo de gestión")
+	}
+}

@@ -44,7 +44,8 @@ type Config struct {
 	// Bot de Telegram (vendedor)
 	TelegramToken          string
 	TelegramAllowedChatIDs []int64
-	TelegramAdminChatIDs   []int64 // reciben aviso de cada orden nueva creada por el bot
+	TelegramAdminChatIDs   []int64 // grupo donde se publica la guía lista
+	TelegramGestionChatIDs []int64 // tu grupo privado: órdenes nuevas con botón para generar la guía y /imprimir
 	TelegramAPIBase        string
 	DefaultValorUnitario   float64
 	BotStatePath           string
@@ -91,6 +92,7 @@ func Load() Config {
 		TelegramToken:          getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramAllowedChatIDs: getEnvInt64List("TELEGRAM_ALLOWED_CHAT_IDS", "TELEGRAM_ALLOWED_CHAT_ID"),
 		TelegramAdminChatIDs:   getEnvInt64List("TELEGRAM_ADMIN_CHAT_IDS"),
+		TelegramGestionChatIDs: getEnvInt64List("TELEGRAM_GESTION_CHAT_IDS"),
 		TelegramAPIBase:        getEnv("TELEGRAM_API_BASE", ""),
 		DefaultValorUnitario:   getEnvFloat("DEFAULT_VALOR_UNITARIO", 60000),
 		BotStatePath:           getEnv("BOT_STATE_FILE", "data/bot_state.json"),

@@ -73,60 +73,73 @@ func (c *Client) ValidateCoverage(ctx context.Context, data domain.ShipmentData)
 		},
 	}
 
-	token, err := c.getAccessToken(ctx)
+	_, rates, failMsg, err := c.runQuotation(ctx, body)
 	if err != nil {
 		return CoverageResult{}, err
+	}
+	if failMsg != "" {
+		return CoverageResult{OK: false, Message: failMsg}, nil
+	}
+	return evaluateRates(rates), nil
+}
+
+// runQuotation crea la cotización (POST /api/v1/quotations) y espera a que termine de cargar las tarifas.
+// Si Skydropx rechaza la cotización, failMsg trae el motivo legible y err es nil.
+func (c *Client) runQuotation(ctx context.Context, body map[string]any) (id string, rates []json.RawMessage, failMsg string, err error) {
+	token, err := c.getAccessToken(ctx)
+	if err != nil {
+		return "", nil, "", err
 	}
 	bodyBytes, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.SkydropxBaseURL+"/api/v1/quotations", bytes.NewReader(bodyBytes))
 	if err != nil {
-		return CoverageResult{}, err
+		return "", nil, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return CoverageResult{}, fmt.Errorf("error de conexión con Skydropx al cotizar: %w", err)
+		return "", nil, "", fmt.Errorf("error de conexión con Skydropx al cotizar: %w", err)
 	}
 	respBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return CoverageResult{OK: false, Message: quotationErrorMessage(respBody, resp.StatusCode)}, nil
+		return "", nil, quotationErrorMessage(respBody, resp.StatusCode), nil
 	}
 
 	var created struct {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(respBody, &created); err != nil || created.ID == "" {
-		return CoverageResult{}, fmt.Errorf("respuesta inesperada de Skydropx al cotizar")
+		return "", nil, "", fmt.Errorf("respuesta inesperada de Skydropx al cotizar")
 	}
 
 	// Espera a que la cotización termine de cargar las tarifas (is_completed).
 	for i := 0; i < quotePollAttempts; i++ {
 		select {
 		case <-ctx.Done():
-			return CoverageResult{}, ctx.Err()
+			return "", nil, "", ctx.Err()
 		case <-time.After(quotePollInterval):
 		}
 		qBody, status, err := c.get(ctx, c.cfg.SkydropxBaseURL+"/api/v1/quotations/"+created.ID)
 		if err != nil {
-			return CoverageResult{}, err
+			return "", nil, "", err
 		}
 		if status < 200 || status >= 300 {
-			return CoverageResult{OK: false, Message: quotationErrorMessage(qBody, status)}, nil
+			return "", nil, quotationErrorMessage(qBody, status), nil
 		}
 		var q struct {
 			IsCompleted bool              `json:"is_completed"`
 			Rates       []json.RawMessage `json:"rates"`
 		}
 		if err := json.Unmarshal(qBody, &q); err != nil {
-			return CoverageResult{}, fmt.Errorf("respuesta inesperada de Skydropx al consultar la cotización")
+			return "", nil, "", fmt.Errorf("respuesta inesperada de Skydropx al consultar la cotización")
 		}
 		if q.IsCompleted {
-			return evaluateRates(q.Rates), nil
+			return created.ID, q.Rates, "", nil
 		}
 	}
-	return CoverageResult{OK: false, Message: "Skydropx tardó demasiado en validar la dirección. Intenta de nuevo."}, nil
+	return "", nil, "Skydropx tardó demasiado en cotizar. Intenta de nuevo.", nil
 }
 
 // evaluateRates decide si hay al menos una tarifa válida y arma el mensaje.
