@@ -141,7 +141,7 @@ func TestPostalCandidates(t *testing.T) {
 	}
 }
 
-func TestLabelsOn(t *testing.T) {
+func TestLabelsSince(t *testing.T) {
 	list := ShipmentList{
 		Data: []json.RawMessage{
 			// Hoy en Colombia (llega en UTC): sí.
@@ -160,8 +160,13 @@ func TestLabelsOn(t *testing.T) {
 		},
 	}
 	now := time.Date(2026, 11, 14, 20, 0, 0, 0, colombia)
-	got := labelsOn(list, now)
+	got := labelsSince(list, now, 1)
 	if len(got) != 2 || got[0].Tracking != "A" || got[1].Tracking != "B" {
-		t.Fatalf("labelsOn = %+v, se esperaban A y B en orden", got)
+		t.Fatalf("solo hoy = %+v, se esperaban A y B en orden", got)
+	}
+	// Con 2 días entra también la de ayer, y queda primero por ser la más antigua.
+	got = labelsSince(list, now, 2)
+	if len(got) != 3 || got[0].Tracking != "AYER" {
+		t.Fatalf("últimos 2 días = %+v, se esperaban AYER, A y B", got)
 	}
 }

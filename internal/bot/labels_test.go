@@ -175,14 +175,14 @@ func TestCancelarVuelveAlBotonGenerar(t *testing.T) {
 
 func TestImprimirHoyEnviaHojas(t *testing.T) {
 	b, f := newTestBot(t)
-	b.imprimirHoy(context.Background(), -100)
+	b.imprimir(context.Background(), -100, 1)
 	if len(f.document) == 0 {
 		t.Fatal("no se envió el PDF")
 	}
 	if !bytes.HasPrefix(f.document, []byte("%PDF")) {
 		t.Fatal("lo enviado no es un PDF")
 	}
-	if !strings.Contains(f.caption, "5 guía(s)") || !strings.Contains(f.caption, "2 hoja(s)") {
+	if !strings.Contains(f.caption, "5 guía(s) de hoy") || !strings.Contains(f.caption, "2 hoja(s)") {
 		t.Fatalf("5 guías deben ir en 2 hojas, caption: %s", f.caption)
 	}
 }
@@ -225,5 +225,21 @@ func TestBotonesSoloEnGrupoDeGestion(t *testing.T) {
 	}
 	if !b.isGestion(-200) || b.isGestion(-100) {
 		t.Fatal("solo -200 debe ser el grupo de gestión")
+	}
+}
+
+func TestDiasAImprimir(t *testing.T) {
+	casos := map[string]int{
+		"/imprimir":          1,
+		"/imprimir 3":        3,
+		"/imprimir@mi_bot 5": 5,
+		"/imprimir 40":       maxDiasImprimir,
+		"/imprimir 0":        1,
+		"/imprimir hoy":      1,
+	}
+	for texto, want := range casos {
+		if got := diasAImprimir(texto); got != want {
+			t.Errorf("diasAImprimir(%q) = %d, want %d", texto, got, want)
+		}
 	}
 }

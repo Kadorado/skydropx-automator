@@ -26,7 +26,7 @@ const (
 	postalRetryPause = 600 * time.Millisecond // el límite de la API es de 2 solicitudes por segundo
 )
 
-// colombia es la hora de Colombia (UTC-5, sin horario de verano) para saber qué guías son "de hoy".
+// colombia es la hora de Colombia (UTC-5, sin horario de verano) para contar los días de las guías.
 var colombia = time.FixedZone("COT", -5*3600)
 
 // LabelQuote es la tarifa de Interrapidísimo lista para confirmar.
@@ -287,24 +287,26 @@ func truncate(s string, max int) string {
 	return s
 }
 
-// TodayLabel es una guía generada hoy, lista para imprimir.
-type TodayLabel struct {
+// PrintLabel es una guía con PDF, lista para imprimir.
+type PrintLabel struct {
 	Tracking  string
 	LabelURL  string
 	CreatedAt time.Time
 }
 
-// TodayLabels devuelve las guías con PDF generadas hoy (hora de Colombia), de la más antigua a la más nueva.
-func (c *Client) TodayLabels(ctx context.Context) ([]TodayLabel, error) {
+// RecentLabels devuelve las guías con PDF de los últimos days días contando hoy (hora de Colombia),
+// de la más antigua a la más nueva. days = 1 es solo hoy.
+func (c *Client) RecentLabels(ctx context.Context, days int) ([]PrintLabel, error) {
 	list, err := c.ListShipments(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return labelsOn(list, time.Now().In(colombia)), nil
+	return labelsSince(list, time.Now().In(colombia), days), nil
 }
 
-// labelsOn filtra los envíos creados el mismo día que now (en la zona de now) que ya tienen PDF.
-func labelsOn(list ShipmentList, now time.Time) []TodayLabel {
+// labelsSince filtra los envíos con PDF creados desde el inicio del día de hace days-1 días
+// (en la zona de now) hasta now.
+func labelsSince(list ShipmentList, now time.Time, days int) []PrintLabel {
 	labelByPackage := map[string]string{}
 	for _, raw := range list.Included {
 		var inc struct {
@@ -319,8 +321,12 @@ func labelsOn(list ShipmentList, now time.Time) []TodayLabel {
 		}
 	}
 
+	if days < 1 {
+		days = 1
+	}
 	y, m, d := now.Date()
-	var out []TodayLabel
+	from := time.Date(y, m, d-(days-1), 0, 0, 0, 0, now.Location())
+	var out []PrintLabel
 	for _, raw := range list.Data {
 		var s struct {
 			Attributes struct {
@@ -343,12 +349,12 @@ func labelsOn(list ShipmentList, now time.Time) []TodayLabel {
 			continue
 		}
 		created = created.In(now.Location())
-		if cy, cm, cd := created.Date(); cy != y || cm != m || cd != d {
+		if created.Before(from) || created.After(now) {
 			continue
 		}
 		for _, p := range s.Relationships.Packages.Data {
 			if u := labelByPackage[p.ID]; u != "" {
-				out = append(out, TodayLabel{Tracking: s.Attributes.Tracking, LabelURL: u, CreatedAt: created})
+				out = append(out, PrintLabel{Tracking: s.Attributes.Tracking, LabelURL: u, CreatedAt: created})
 				break
 			}
 		}

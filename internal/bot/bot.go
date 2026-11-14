@@ -80,11 +80,11 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 	// Tu grupo de gestión: /imprimir y ayuda. Las guías se generan con los botones de cada orden.
 	if b.isGestion(chatID) {
 		if strings.HasPrefix(text, "/imprimir") {
-			b.imprimirHoy(ctx, chatID)
+			b.imprimir(ctx, chatID, diasAImprimir(text))
 			return
 		}
 		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-			b.say(ctx, chatID, "Aquí llegan las órdenes nuevas con el botón 🚚 para generar la guía con Interrapidísimo.")
+			b.say(ctx, chatID, "Aquí llegan las órdenes nuevas con el botón 🚚 para generar la guía con Interrapidísimo.\n\n"+ayudaImprimir)
 			return
 		}
 		if !b.isAllowed(chatID) {
@@ -97,7 +97,7 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 		return
 	}
 	if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, la mando "+b.guiaDestino()+".\n\n🖨️ /imprimir arma las guías de hoy en hojas carta de 4 para imprimir.")
+		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, la mando "+b.guiaDestino()+".")
 		return
 	}
 	b.createOrder(ctx, chatID, sender, text)

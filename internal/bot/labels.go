@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -173,13 +174,43 @@ func (b *Bot) confirmarGuia(ctx context.Context, callbackID string, chatID, msgI
 	}()
 }
 
-// imprimirHoy arma las guías generadas hoy en hojas carta de 4 y las envía como PDF.
-func (b *Bot) imprimirHoy(ctx context.Context, chatID int64) {
-	b.say(ctx, chatID, "⏳ Buscando las guías de hoy…")
-	pctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+// maxDiasImprimir es el máximo de días hacia atrás que acepta /imprimir.
+const maxDiasImprimir = 15
+
+const ayudaImprimir = "🖨️ /imprimir arma las guías de hoy en hojas carta de 4.\n" +
+	"/imprimir 3 incluye las de los últimos 3 días (hasta 15), por ejemplo después de un festivo."
+
+// diasAImprimir lee el número de días de "/imprimir 3" (o "/imprimir@bot 3"). Sin número es 1 (hoy).
+func diasAImprimir(text string) int {
+	fields := strings.Fields(text)
+	if len(fields) < 2 {
+		return 1
+	}
+	n, err := strconv.Atoi(fields[1])
+	if err != nil || n < 1 {
+		return 1
+	}
+	if n > maxDiasImprimir {
+		return maxDiasImprimir
+	}
+	return n
+}
+
+// periodo describe los días que se imprimen: "de hoy" o "de los últimos 3 días".
+func periodo(dias int) string {
+	if dias <= 1 {
+		return "de hoy"
+	}
+	return fmt.Sprintf("de los últimos %d días", dias)
+}
+
+// imprimir arma las guías de los últimos dias días en hojas carta de 4 y las envía como PDF.
+func (b *Bot) imprimir(ctx context.Context, chatID int64, dias int) {
+	b.say(ctx, chatID, "⏳ Buscando las guías "+periodo(dias)+"…")
+	pctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
-	guias, err := b.sky.TodayLabels(pctx)
+	guias, err := b.sky.RecentLabels(pctx, dias)
 	if errors.Is(err, skydropx.ErrMockMode) {
 		b.say(ctx, chatID, "Modo simulación: no hay guías reales para imprimir.")
 		return
@@ -189,7 +220,11 @@ func (b *Bot) imprimirHoy(ctx context.Context, chatID int64) {
 		return
 	}
 	if len(guias) == 0 {
-		b.say(ctx, chatID, "Hoy todavía no hay guías generadas.")
+		if dias <= 1 {
+			b.say(ctx, chatID, "Hoy todavía no hay guías generadas. Para incluir días anteriores escribe, por ejemplo, /imprimir 3")
+		} else {
+			b.say(ctx, chatID, "No hay guías generadas "+periodo(dias)+".")
+		}
 		return
 	}
 
@@ -205,7 +240,7 @@ func (b *Bot) imprimirHoy(ctx context.Context, chatID int64) {
 		pdfs = append(pdfs, data)
 	}
 	if len(pdfs) == 0 {
-		b.say(ctx, chatID, "❌ No pude descargar ninguna guía de hoy.")
+		b.say(ctx, chatID, "❌ No pude descargar ninguna guía "+periodo(dias)+".")
 		return
 	}
 	hojas, err := labels.Sheets(pctx, pdfs)
@@ -215,7 +250,7 @@ func (b *Bot) imprimirHoy(ctx context.Context, chatID int64) {
 	}
 
 	numHojas := (len(pdfs) + labels.PerSheet - 1) / labels.PerSheet
-	caption := fmt.Sprintf("🖨️ <b>%d guía(s) de hoy</b> en %d hoja(s) carta.", len(pdfs), numHojas)
+	caption := fmt.Sprintf("🖨️ <b>%d guía(s) %s</b> en %d hoja(s) carta.", len(pdfs), periodo(dias), numHojas)
 	if len(fallidas) > 0 {
 		caption += "\n⚠️ No se pudieron descargar: " + html.EscapeString(strings.Join(fallidas, ", "))
 	}
