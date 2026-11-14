@@ -23,6 +23,7 @@ var (
 	reDireccion    = regexp.MustCompile(`(?im)^\s*(?:direcci[oó]n|dir)\s*:\s*(.+)$`)
 	reCorreo       = regexp.MustCompile(`(?im)^\s*(?:correo(?:\s+electr[oó]nico)?|email|e-mail)\s*:\s*([^\s]+)$`)
 	reCantidad     = regexp.MustCompile(`(?im)^\s*(?:cantidad|cant|unidades|paquetes)\s*:\s*(\d+)`)
+	reCodigoPostal = regexp.MustCompile(`(?im)^\s*(?:c[oó]digo\s+postal|cod(?:igo)?\.?\s*postal|cp)\s*:\s*(\d{5,6})\b`)
 	reValor        = regexp.MustCompile(`(?im)^\s*(?:valor(?:\s+unitario)?|precio(?:\s+unitario)?)\s*:\s*\$?\s*([\d][\d.,]*)`)
 )
 
@@ -104,6 +105,11 @@ func ParseWhatsAppMessage(raw string) domain.ParseResponse {
 
 	if explicitDept != "" {
 		data.Departamento = explicitDept
+	}
+
+	// Un código postal explícito reemplaza el de referencia de la tabla de ciudades.
+	if m := reCodigoPostal.FindStringSubmatch(raw); len(m) > 1 {
+		data.CodigoPostal = m[1]
 	}
 
 	missing := ValidateShipmentData(data)
