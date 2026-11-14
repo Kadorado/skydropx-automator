@@ -105,12 +105,23 @@ func (b *Bot) cotizarGuia(ctx context.Context, callbackID string, chatID, msgID 
 	if q.Days > 0 {
 		dias = fmt.Sprintf(" · %d día(s)", q.Days)
 	}
-	text := fmt.Sprintf("%s\n\n🚚 <b>Interrapidísimo</b>%s · <b>%s</b>%s\n🛡️ Sin Protección Plus\n\n¿Genero la guía?",
-		base, servicio(q.Service), formatCOP(q.Total), dias)
+	text := fmt.Sprintf("%s\n\n🚚 <b>Interrapidísimo</b>%s · <b>%s</b>%s\n%s\n🛡️ Sin Protección Plus\n\n¿Genero la guía?",
+		base, servicio(q.Service), formatCOP(q.Total), dias, cobroContraEntrega(*p.Data, q.Total))
 	_ = b.tg.EditMessage(ctx, chatID, msgID, text, [][]telegram.Button{telegram.Row(
 		telegram.Button{Text: "✅ Confirmar", Data: actConfirmar + ":" + p.OrderID},
 		telegram.Button{Text: "❌ Cancelar", Data: actCancelar + ":" + p.OrderID},
 	)})
+}
+
+// cobroContraEntrega explica lo que la transportadora le cobra al cliente: el producto más el envío.
+func cobroContraEntrega(data domain.ShipmentData, envio float64) string {
+	qty := data.Cantidad
+	if qty < 1 {
+		qty = 1
+	}
+	producto := data.ValorUnitario * float64(qty)
+	return fmt.Sprintf("💵 Contra entrega, el cliente paga el envío: cobra <b>%s</b> al recibir (producto %s + envío %s)",
+		formatCOP(producto+envio), formatCOP(producto), formatCOP(envio))
 }
 
 func servicio(s string) string {
@@ -158,9 +169,15 @@ func (b *Bot) confirmarGuia(ctx context.Context, callbackID string, chatID, msgI
 		_ = b.tg.EditMessage(ctx, chatID, msgID, base+"\n\n❌ No se generó la guía: "+html.EscapeString(err.Error()), botonGenerarReintentar(p.OrderID))
 		return
 	}
+	// La dirección del cliente queda en Mis direcciones con su nombre; si falla, la guía sigue igual.
+	direccion := "📒 Dirección guardada en Mis direcciones como \"" + html.EscapeString(p.Data.Nombre) + "\"."
+	if err := b.sky.SaveRecipientAddress(cctx, *p.Data, p.Quote.PostalCode); err != nil {
+		log.Printf("bot: no se pudo guardar la dirección de %s: %v", p.OrderID, err)
+		direccion = "⚠️ No se pudo guardar la dirección en Mis direcciones: " + html.EscapeString(err.Error())
+	}
 	_ = b.tg.EditMessage(ctx, chatID, msgID, fmt.Sprintf(
-		"%s\n\n✅ <b>Guía solicitada</b> con Interrapidísimo (%s, sin Protección Plus). En cuanto Skydropx la genere, llega aquí.",
-		base, formatCOP(p.Quote.Total)), nil)
+		"%s\n\n✅ <b>Guía solicitada</b> con Interrapidísimo (%s, sin Protección Plus).\n%s\n%s\n\nEn cuanto Skydropx la genere, llega al grupo del vendedor.",
+		base, formatCOP(p.Quote.Total), cobroContraEntrega(*p.Data, p.Quote.Total), direccion), nil)
 
 	// Skydropx tarda unos segundos en generar la guía: se revisa pronto en vez de esperar la revisión periódica.
 	go func() {

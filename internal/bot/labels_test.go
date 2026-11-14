@@ -27,6 +27,7 @@ type fakeAPIs struct {
 	buttons   []string // datos de los botones del último mensaje editado
 	shipments int      // veces que se creó un envío
 	document  []byte   // PDF enviado con sendDocument
+	alias     []string // alias de las direcciones guardadas
 	caption   string
 	srvURL    string
 }
@@ -87,6 +88,22 @@ func (f *fakeAPIs) handler() http.Handler {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"data":{"id":"shp-1"}}`)
 	})
+	mux.HandleFunc("GET /api/v1/address_templates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[],"meta":{"next_page":null}}`)
+	})
+	mux.HandleFunc("POST /api/v1/address_templates/", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Template struct {
+				Alias string `json:"alias_name"`
+			} `json:"address_template"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.alias = append(f.alias, body.Template.Alias)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"data":{"id":"tpl-1"}}`)
+	})
 	mux.HandleFunc("GET /api/v1/shipments/shp-1", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"data":{"id":"shp-1","attributes":{}}}`) // la guía aún no está lista
 	})
@@ -140,6 +157,9 @@ func TestGenerarYConfirmarGuia(t *testing.T) {
 
 	b.handleCallback(ctx, callback("g:orden-1"))
 	last := f.edits[len(f.edits)-1]
+	if !strings.Contains(last, "cobra <b>$74.500</b> al recibir (producto $60.000 + envío $14.500)") {
+		t.Fatalf("debe mostrar el cobro contra entrega con el envío incluido, llegó: %s", last)
+	}
 	if !strings.Contains(last, "$14.500") || !strings.Contains(last, "Sin Protección Plus") {
 		t.Fatalf("la cotización debería mostrar precio y protección, llegó: %s", last)
 	}
@@ -152,8 +172,11 @@ func TestGenerarYConfirmarGuia(t *testing.T) {
 	if f.shipments != 1 {
 		t.Fatalf("se crearon %d envíos, debe ser 1 aunque se toque dos veces", f.shipments)
 	}
-	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "Guía solicitada") {
-		t.Fatalf("debería confirmar la guía solicitada, llegó: %s", last)
+	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "Guía solicitada") || !strings.Contains(last, "Dirección guardada") {
+		t.Fatalf("debería confirmar la guía y la dirección guardada, llegó: %s", last)
+	}
+	if strings.Join(f.alias, ",") != "Cliente de Prueba" {
+		t.Fatalf("la dirección debe guardarse una vez con el nombre del cliente, alias = %v", f.alias)
 	}
 }
 
@@ -241,5 +264,50 @@ func TestDiasAImprimir(t *testing.T) {
 		if got := diasAImprimir(texto); got != want {
 			t.Errorf("diasAImprimir(%q) = %d, want %d", texto, got, want)
 		}
+	}
+}
+
+func TestOrdenNuevaLlegaAAmbosGruposYBotonSoloAGestion(t *testing.T) {
+	f := &fakeAPIs{}
+	var mu sync.Mutex
+	enviados := map[int64]string{} // chat -> botones del mensaje
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /botTOKEN/sendMessage", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ChatID int64 `json:"chat_id"`
+			Markup struct {
+				Keyboard [][]telegram.Button `json:"inline_keyboard"`
+			} `json:"reply_markup"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		var datos []string
+		for _, row := range body.Markup.Keyboard {
+			for _, b := range row {
+				datos = append(datos, b.Data)
+			}
+		}
+		mu.Lock()
+		enviados[body.ChatID] = strings.Join(datos, ",")
+		mu.Unlock()
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
+	})
+	mux.Handle("/", f.handler())
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	b, err := New(Options{
+		Token: "TOKEN", APIBase: srv.URL, AdminChatIDs: []int64{-100}, GestionChatIDs: []int64{-200},
+		StatePath: filepath.Join(t.TempDir(), "state.json"), CheckEvery: time.Hour,
+	}, skydropx.NewClient(config.Config{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.notifyAdmins(context.Background(), "Vendedor", domain.ShipmentData{Nombre: "Cliente"}, "orden-9", false)
+
+	if got, ok := enviados[-200]; !ok || got != "g:orden-9" {
+		t.Fatalf("tu grupo debe recibir la orden con el botón, recibió %q (ok=%v)", got, ok)
+	}
+	if got, ok := enviados[-100]; !ok || got != "" {
+		t.Fatalf("el grupo del vendedor debe recibir la orden sin botones, recibió %q (ok=%v)", got, ok)
 	}
 }

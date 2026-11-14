@@ -236,7 +236,8 @@ func senderOrChat(sender string, chatID int64) string {
 	return sender
 }
 
-// notifyAdmins avisa al grupo de gestión que hay una orden nueva, con el botón para generar la guía.
+// notifyAdmins avisa la orden nueva: al grupo de gestión con el botón para generar la guía
+// y al grupo del vendedor (TELEGRAM_ADMIN_CHAT_IDS) solo como aviso.
 func (b *Bot) notifyAdmins(ctx context.Context, sender string, data domain.ShipmentData, orderID string, isMock bool) {
 	msg := adminOrderText(sender, data)
 	var buttons [][]telegram.Button
@@ -249,6 +250,13 @@ func (b *Bot) notifyAdmins(ctx context.Context, sender string, data domain.Shipm
 		if _, err := b.tg.SendMessageWithButtons(ctx, id, msg, buttons); err != nil {
 			log.Printf("bot: no se pudo avisar la orden nueva: %v", err)
 		}
+	}
+	// El grupo del vendedor también ve la orden, pero sin botones: la guía solo se gestiona en el grupo de gestión.
+	for _, id := range b.opts.AdminChatIDs {
+		if b.isGestion(id) {
+			continue // ya recibió el aviso con botones
+		}
+		b.say(ctx, id, msg+"\n\n📄 La guía llegará aquí cuando esté lista.")
 	}
 }
 

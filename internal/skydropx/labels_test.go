@@ -170,3 +170,54 @@ func TestLabelsSince(t *testing.T) {
 		t.Fatalf("últimos 2 días = %+v, se esperaban AYER, A y B", got)
 	}
 }
+
+func TestSaveRecipientAddress(t *testing.T) {
+	var mu sync.Mutex
+	var guardadas []map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"access_token":"tok","expires_in":7200}`)
+	})
+	mux.HandleFunc("GET /api/v1/address_templates", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		var data []string
+		for _, g := range guardadas {
+			attrs := g["address_attributes"].(map[string]any)
+			data = append(data, `{"alias_name":"`+g["alias_name"].(string)+`","address_type":"to","address":{"street1":"`+attrs["street1"].(string)+`"}}`)
+		}
+		_, _ = io.WriteString(w, `{"data":[`+strings.Join(data, ",")+`],"meta":{"next_page":null}}`)
+	})
+	mux.HandleFunc("POST /api/v1/address_templates/", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		guardadas = append(guardadas, body["address_template"].(map[string]any))
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"data":{"id":"tpl-1"}}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	c := NewClient(config.Config{SkydropxMode: "live", SkydropxBaseURL: srv.URL, SkydropxClientID: "id",
+		SkydropxClientSecret: "secret", OriginEmail: "tienda@example.com"})
+
+	data := domain.ShipmentData{Nombre: "Dagoberto Prada", Telefono: "3002013421", Departamento: "Bolívar",
+		Ciudad: "Cartagena", Barrio: "Villa Estrella", Direccion: "Cr 92#43-75"}
+	for i := 0; i < 2; i++ { // el segundo intento no debe duplicarla
+		if err := c.SaveRecipientAddress(context.Background(), data, "130002"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(guardadas) != 1 {
+		t.Fatalf("se guardaron %d direcciones, debe ser 1", len(guardadas))
+	}
+	g := guardadas[0]
+	attrs := g["address_attributes"].(map[string]any)
+	if g["alias_name"] != "Dagoberto Prada" || g["address_type"] != "to" || g["default"] != nil {
+		t.Fatalf("plantilla inesperada: %v", g)
+	}
+	if attrs["postal_code"] != "130002" || attrs["email"] != "tienda@example.com" || attrs["reference"] != "Villa Estrella" {
+		t.Fatalf("dirección inesperada: %v", attrs)
+	}
+}
