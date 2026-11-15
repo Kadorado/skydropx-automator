@@ -40,6 +40,9 @@ type State struct {
 	Pending []Pending `json:"pending"`
 	Recent  []Recent  `json:"recent"`
 
+	// Estado de cobro ya avisado por envío (collected | failed), para no repetir el aviso.
+	Cobros map[string]string `json:"cobros,omitempty"`
+
 	mu   sync.Mutex
 	path string
 }
@@ -178,4 +181,19 @@ func (s *State) snapshotPending() []Pending {
 	out := make([]Pending, len(s.Pending))
 	copy(out, s.Pending)
 	return out
+}
+
+// marcarCobro guarda el estado de cobro de un envío. Devuelve false si ya tenía ese estado (ya se avisó).
+func (s *State) marcarCobro(id, status string) (bool, error) {
+	s.mu.Lock()
+	if s.Cobros[id] == status {
+		s.mu.Unlock()
+		return false, nil
+	}
+	if s.Cobros == nil {
+		s.Cobros = map[string]string{}
+	}
+	s.Cobros[id] = status
+	s.mu.Unlock()
+	return true, s.save()
 }

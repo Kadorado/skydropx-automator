@@ -38,6 +38,7 @@ type Bot struct {
 	st   *State
 
 	checkMu sync.Mutex // evita que el webhook y la revisión periódica avisen dos veces la misma guía
+	cobroMu sync.Mutex // evita que dos webhooks de entrega avisen dos veces el mismo pago
 }
 
 func New(opts Options, sky *skydropx.Client) (*Bot, error) {

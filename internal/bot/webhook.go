@@ -40,7 +40,18 @@ func (b *Bot) WebhookHandler(secret, header string) http.HandlerFunc {
 		orderID := ev.Data.Relationships.Order.Data.ID
 		shipmentID := ev.Data.Relationships.Shipment.Data.ID
 		log.Printf("webhook: %s %s (orden %s, envío %s)", ev.Data.Type, ev.Data.Attributes.Status, orderID, shipmentID)
-		if ev.Data.Type != "packages" || orderID == "" {
+		if ev.Data.Type != "packages" {
+			return
+		}
+		// En contra entrega el cliente paga al recibir: entregado es pagado, y en devolución es no cobrado.
+		// "delivered_to_branch" no cuenta: el paquete espera en la oficina y todavía no se ha pagado.
+		switch ev.Data.Attributes.Status {
+		case "delivered":
+			go b.avisoEntrega(shipmentID, ev.Data.Attributes.Tracking, "collected")
+		case "in_return":
+			go b.avisoEntrega(shipmentID, ev.Data.Attributes.Tracking, "failed")
+		}
+		if orderID == "" {
 			return
 		}
 		// Se responde de inmediato y la consulta a Skydropx se hace aparte.
@@ -52,7 +63,8 @@ type webhookEvent struct {
 	Data struct {
 		Type       string `json:"type"`
 		Attributes struct {
-			Status string `json:"status"`
+			Status   string `json:"status"`
+			Tracking string `json:"tracking_number"`
 		} `json:"attributes"`
 		Relationships struct {
 			Shipment struct {

@@ -304,6 +304,7 @@ func withLabel(shipments []financeShipment) []financeShipment {
 
 // financeShipment es lo que el resumen necesita de cada envío.
 type financeShipment struct {
+	ID         string
 	Date       string
 	Tracking   string
 	Customer   string
@@ -334,6 +335,7 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 	var out []financeShipment
 	for _, raw := range list.Data {
 		var s struct {
+			ID            string `json:"id"`
 			Relationships struct {
 				AddressTo struct {
 					Data *struct {
@@ -363,6 +365,7 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 			customer = names[to.ID]
 		}
 		out = append(out, financeShipment{
+			ID:         s.ID,
 			Date:       s.Attributes.CreatedAt,
 			Tracking:   s.Attributes.Tracking,
 			Customer:   customer,
