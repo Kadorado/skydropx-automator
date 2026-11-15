@@ -133,3 +133,45 @@ func TestFinanceCompleto(t *testing.T) {
 		t.Fatalf("no debería haber avisos: %v", f.Warnings)
 	}
 }
+
+func TestPerShipmentJuntaDevolucionesPorGuia(t *testing.T) {
+	shipments := []financeShipment{
+		{Date: "2026-11-02T10:00:00Z", Tracking: "G1", Customer: "Ana", OnDelivery: "collected", CODAmount: 72000, Cost: 12000},
+		{Date: "2026-11-03T10:00:00Z", Tracking: "G2", Customer: "Luis", OnDelivery: "pending", CODAmount: 70000, Cost: 10000},
+		{Date: "2026-11-01T10:00:00Z", Tracking: "G3", OnDelivery: "failed", CODAmount: 70000, Cost: 10000},
+	}
+	movs := []Movement{
+		{Date: "2026-11-02T10:00:00Z", Kind: "withdrawal", Amount: 12000, Tracking: "G1"}, // cobro de la guía: no es devolución
+		{Date: "2026-11-09T10:00:00Z", Kind: "refund", Amount: 12000, Tracking: "G1"},
+		{Date: "2026-11-05T10:00:00Z", Kind: "deposit", Amount: 50000}, // recarga sin guía
+	}
+	extras := []ExtraCharge{{Date: "2026-11-08", Tracking: "G3", Amount: 9000}}
+
+	rows, total := perShipment(shipments, movs, extras)
+	if len(rows) != 3 || rows[0].Tracking != "G2" || rows[2].Tracking != "G3" {
+		t.Fatalf("orden inesperado: %+v", rows)
+	}
+	g1 := rows[1]
+	if g1.Returned != 12000 || g1.ReturnedAt != "2026-11-09T10:00:00Z" || g1.Customer != "Ana" {
+		t.Fatalf("G1: %+v", g1)
+	}
+	if rows[2].Extra != 9000 || rows[0].Returned != 0 {
+		t.Fatalf("G3 extra %v, G2 devuelto %v", rows[2].Extra, rows[0].Returned)
+	}
+	if total != (Money{1, 12000}) {
+		t.Fatalf("total devuelto %+v", total)
+	}
+}
+
+func TestFinanceShipmentsNombreYGuia(t *testing.T) {
+	p, _ := NewPeriod("2026-11-01", "2026-11-14")
+	list := ShipmentList{
+		Data: []json.RawMessage{json.RawMessage(`{"relationships":{"address_to":{"data":{"id":"a1","type":"address"}}},
+			"attributes":{"created_at":"2026-11-02T15:00:00Z","master_tracking_number":"240001","on_delivery_status":"pending"}}`)},
+		Included: []json.RawMessage{json.RawMessage(`{"id":"a1","type":"address","attributes":{"name":"Ana Pérez"}}`)},
+	}
+	got := financeShipments(list, p)
+	if len(got) != 1 || got[0].Customer != "Ana Pérez" || got[0].Tracking != "240001" {
+		t.Fatalf("envío inesperado: %+v", got)
+	}
+}

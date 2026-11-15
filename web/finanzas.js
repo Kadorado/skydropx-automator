@@ -114,6 +114,9 @@
     ["fin-cobrado-sub", "fin-porcobrar-sub", "fin-fallido-sub", "fin-envios-sub",
       "fin-com-pagar-sub", "fin-com-pend-sub", "fin-com-total-sub", "fin-mov-count"].forEach((id) => ($(id).textContent = ""));
     $("fin-gastos").innerHTML = `<div class="skeleton my-3 h-5 rounded-md"></div>`.repeat(4);
+    $("fin-env-resumen").innerHTML = "";
+    $("fin-env-count").textContent = "";
+    $("fin-env-lista").innerHTML = `<div class="px-5 py-3 sm:px-7"><div class="skeleton h-10 rounded-md"></div></div>`.repeat(4);
     $("fin-movimientos").innerHTML = `<tr><td colspan="3" class="px-5 py-3 sm:px-7"><div class="skeleton h-5 rounded-md"></div></td></tr>`.repeat(4);
     $("fin-avisos").classList.add("hidden");
   }
@@ -122,6 +125,7 @@
     LOADING_IDS.forEach((id) => ($(id).textContent = "–"));
     $("fin-gastos").innerHTML = "";
     $("fin-movimientos").innerHTML = "";
+    $("fin-env-lista").innerHTML = "";
     showAvisos([msg], "error");
   }
 
@@ -174,6 +178,7 @@
     $("fin-envios").textContent = f.shipments || 0;
     $("fin-envios-sub").textContent = f.cancelled ? `${plural(f.cancelled, "cancelado", "cancelados")}` : "Ninguno cancelado";
 
+    renderPorEnvio(f);
     renderGastos(f);
     renderMovimientos(f.movements || []);
     renderExtras(f.extra_charges || []);
@@ -181,6 +186,88 @@
     const avisos = [...(f.warnings || [])];
     if (f.truncated) avisos.push("Hay más de 300 envíos: los más antiguos no entran en el cálculo.");
     showAvisos(avisos);
+  }
+
+  // ---------- Cuenta por envío ----------
+
+  const ESTADO_COBRO = {
+    collected: { label: "Cobrado", cls: "bg-teal-50 text-teal-700" },
+    pending: { label: "Por cobrar", cls: "bg-amber-50 text-amber-700" },
+    failed: { label: "No se cobró", cls: "bg-rose-50 text-rose-700" },
+    cancelled: { label: "Cancelada", cls: "bg-slate-100 text-slate-500" },
+  };
+
+  function fmtShortDay(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return iso || "";
+    return d.toLocaleDateString("es-CO", { timeZone: TZ, day: "numeric", month: "short" });
+  }
+
+  // Qué pasó con la plata del envío, en palabras.
+  function devolucionTexto(e) {
+    if (e.returned > 0) {
+      return { main: `+${money(e.returned)}`, sub: e.returned_at ? `volvió el ${fmtShortDay(e.returned_at)}` : "volvió a tus créditos", cls: "text-emerald-600" };
+    }
+    if (e.status === "collected") return { main: "Nada todavía", sub: "cobrado, sin abono a tus créditos", cls: "text-slate-500" };
+    if (e.status === "pending") return { main: "—", sub: "esperando que el cliente pague", cls: "text-slate-400" };
+    if (e.status === "failed") return { main: "—", sub: "el cliente no pagó", cls: "text-rose-500" };
+    if (e.status === "cancelled") return { main: "—", sub: "guía cancelada", cls: "text-slate-400" };
+    return { main: "—", sub: "", cls: "text-slate-400" };
+  }
+
+  function renderPorEnvio(f) {
+    const list = f.per_shipment || [];
+    const activos = list.filter((e) => e.status !== "cancelled");
+    const gastado = activos.reduce((t, e) => t + (e.label_cost || 0) + (e.extra || 0), 0);
+    const ret = f.returned || {};
+    const cobradosSin = activos.filter((e) => e.status === "collected" && !(e.returned > 0)).length;
+
+    const box = (label, value, sub, cls) => `
+      <div class="rounded-xl bg-slate-50 px-2 py-3">
+        <p class="text-[11px] font-medium text-slate-500">${label}</p>
+        <p class="mt-1 text-base font-bold tabular-nums sm:text-lg ${cls}">${value}</p>
+        <p class="text-[11px] text-slate-400">${sub}</p>
+      </div>`;
+    $("fin-env-resumen").innerHTML =
+      box("Gastaste en envíos", `−${money(gastado)}`, plural(activos.length, "guía", "guías"), "text-slate-900") +
+      box("Volvió a tus créditos", `+${money(ret.amount)}`, plural(ret.count || 0, "envío", "envíos"), "text-emerald-600") +
+      box("Cobrados sin abono", String(cobradosSin), cobradosSin === 1 ? "envío" : "envíos", cobradosSin ? "text-amber-600" : "text-slate-900");
+
+    $("fin-env-count").textContent = list.length ? plural(list.length, "envío", "envíos") : "";
+    if (!list.length) {
+      $("fin-env-lista").innerHTML = `<p class="px-5 py-10 text-center text-sm text-slate-400 sm:px-7">Sin envíos en este periodo</p>`;
+      return;
+    }
+    $("fin-env-lista").innerHTML = list
+      .map((e) => {
+        const st = ESTADO_COBRO[e.status] || { label: e.status || "Sin estado", cls: "bg-slate-100 text-slate-500" };
+        const dev = devolucionTexto(e);
+        return `
+          <div class="grid grid-cols-2 gap-x-4 gap-y-2 px-5 py-3.5 text-sm sm:grid-cols-[1.6fr_1fr_1fr_1.2fr] sm:items-center sm:px-7 ${e.status === "cancelled" ? "opacity-60" : ""}">
+            <div class="col-span-2 min-w-0 sm:col-span-1">
+              <div class="flex items-center gap-2">
+                <p class="truncate font-medium text-slate-800">${escapeHtml(e.customer || "Sin nombre")}</p>
+                <span class="badge ${st.cls} shrink-0">${st.label}</span>
+              </div>
+              <p class="mt-0.5 text-xs text-slate-400">${escapeHtml(fmtShortDay(e.date))}${e.tracking ? ` · <span class="font-mono">${escapeHtml(e.tracking)}</span>` : ""}</p>
+            </div>
+            <div>
+              <p class="text-[11px] text-slate-400">Te costó el envío</p>
+              <p class="font-semibold tabular-nums text-slate-900">−${money(e.label_cost)}</p>
+              ${e.extra > 0 ? `<p class="text-xs font-medium text-rose-600">−${money(e.extra)} cargo extra</p>` : ""}
+            </div>
+            <div>
+              <p class="text-[11px] text-slate-400">El cliente paga</p>
+              <p class="font-semibold tabular-nums text-slate-700">${e.customer_pays ? money(e.customer_pays) : "—"}</p>
+            </div>
+            <div class="col-span-2 sm:col-span-1">
+              <p class="text-[11px] text-slate-400">Volvió a tus créditos</p>
+              <p class="font-semibold tabular-nums ${dev.cls}">${dev.main}</p>
+              ${dev.sub ? `<p class="text-xs text-slate-400">${escapeHtml(dev.sub)}</p>` : ""}
+            </div>
+          </div>`;
+      })
+      .join("");
   }
 
   const CATEGORIAS = {

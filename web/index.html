@@ -484,6 +484,26 @@
         </div>
       </div>
 
+      <!-- Cuenta por envío -->
+      <div class="card min-w-0 !p-0">
+        <div class="px-5 pt-5 sm:px-7">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p class="section-title !mb-1">Cuenta por envío</p>
+              <p class="text-sm text-slate-500">Lo que te costó cada guía y lo que volvió a tus créditos con ese mismo número de guía.</p>
+            </div>
+            <p id="fin-env-count" class="text-xs text-slate-400"></p>
+          </div>
+          <ol class="mt-4 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
+            <li class="flex gap-2 rounded-xl bg-slate-50 px-3 py-2.5"><span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">1</span><span><b class="text-slate-800">Generas la guía:</b> Skydropx descuenta el envío de tus créditos.</span></li>
+            <li class="flex gap-2 rounded-xl bg-slate-50 px-3 py-2.5"><span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">2</span><span><b class="text-slate-800">Entregan el paquete:</b> el cliente le paga a la transportadora el producto + el envío.</span></li>
+            <li class="flex gap-2 rounded-xl bg-slate-50 px-3 py-2.5"><span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">3</span><span><b class="text-slate-800">Te devuelven:</b> si Skydropx abona algo a tus créditos con esa guía, aparece en verde.</span></li>
+          </ol>
+          <div id="fin-env-resumen" class="mt-4 grid grid-cols-3 gap-2 text-center"></div>
+        </div>
+        <div id="fin-env-lista" class="mt-4 max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-t border-slate-100"></div>
+      </div>
+
       <!-- Gastos + movimientos -->
       <div class="grid gap-4 lg:grid-cols-5">
         <div class="card min-w-0 lg:col-span-2">
@@ -581,6 +601,6 @@
 
   <script src="app.js?v=9"></script>
   <script src="mis-envios.js?v=22"></script>
-  <script src="finanzas.js?v=1"></script>
+  <script src="finanzas.js?v=2"></script>
 </body>
 </html>

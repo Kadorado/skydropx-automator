@@ -88,6 +88,20 @@ type ExtraCharge struct {
 	Status   string  `json:"status"`
 }
 
+// ShipmentMoney es la cuenta de un envío: lo que costó la guía, lo que paga el cliente
+// y lo que volvió a los créditos con el mismo número de guía.
+type ShipmentMoney struct {
+	Date         string  `json:"date"`
+	Tracking     string  `json:"tracking"`
+	Customer     string  `json:"customer"`
+	Status       string  `json:"status"`        // pending | collected | failed | cancelled | vacío
+	LabelCost    float64 `json:"label_cost"`    // costo de la guía descontado de los créditos
+	CustomerPays float64 `json:"customer_pays"` // lo que la transportadora le cobra al cliente (producto + envío)
+	Returned     float64 `json:"returned"`      // abonos y devoluciones a los créditos con esta guía
+	ReturnedAt   string  `json:"returned_at"`   // fecha del último abono o devolución
+	Extra        float64 `json:"extra"`         // cargos extra de esta guía
+}
+
 // Finance es el resumen de dinero de un periodo.
 type Finance struct {
 	Balance      *float64         `json:"balance"` // nil si no se pudo consultar
@@ -104,7 +118,9 @@ type Finance struct {
 	Commission   Commission       `json:"commission"`
 	Movements    []Movement       `json:"movements"`
 	ExtraCharges []ExtraCharge    `json:"extra_charges"`
-	Truncated    bool             `json:"truncated"` // hay más de 300 envíos: los más antiguos no entran
+	PerShipment  []ShipmentMoney  `json:"per_shipment"` // la cuenta de cada envío del periodo, del más nuevo al más antiguo
+	Returned     Money            `json:"returned"`     // lo que volvió a los créditos por los envíos del periodo
+	Truncated    bool             `json:"truncated"`    // hay más de 300 envíos: los más antiguos no entran
 	Warnings     []string         `json:"warnings"`
 }
 
@@ -136,9 +152,21 @@ func (c *Client) Finance(ctx context.Context, p Period, perUnit float64) (Financ
 		f.BalanceError = err.Error()
 	}
 
-	if movs, err := c.movements(ctx, p); err == nil {
-		f.Movements = movs
+	// Los movimientos y cargos se traen hasta hoy: una devolución puede llegar días después del envío.
+	// Los listados y el resumen de gastos muestran solo los del periodo.
+	untilNow := Period{From: p.From, To: time.Now().In(colombia)}
+	if untilNow.To.Before(p.To) {
+		untilNow.To = p.To
+	}
+	var allMovs []Movement
+	var allExtras []ExtraCharge
+	if movs, err := c.movements(ctx, untilNow); err == nil {
+		allMovs = movs
 		for _, m := range movs {
+			if !p.containsDate(m.Date) {
+				continue
+			}
+			f.Movements = append(f.Movements, m)
 			agg := f.Spending[m.Category]
 			agg.Count++
 			agg.Amount += m.Amount
@@ -148,20 +176,92 @@ func (c *Client) Finance(ctx context.Context, p Period, perUnit float64) (Financ
 		f.Warnings = append(f.Warnings, "No se pudieron consultar los movimientos: "+err.Error())
 	}
 
-	if extras, err := c.extraCharges(ctx, p); err == nil {
-		f.ExtraCharges = extras
+	if extras, err := c.extraCharges(ctx, untilNow); err == nil {
+		allExtras = extras
 		for _, e := range extras {
+			if !p.containsDate(e.Date) {
+				continue
+			}
+			f.ExtraCharges = append(f.ExtraCharges, e)
 			f.Extra.Count++
 			f.Extra.Amount += e.Amount
 		}
 	} else {
 		f.Warnings = append(f.Warnings, "No se pudieron consultar los cargos extra: "+err.Error())
 	}
+	f.PerShipment, f.Returned = perShipment(shipments, allMovs, allExtras)
 	return f, nil
+}
+
+// containsDate dice si una fecha de Skydropx (con hora o solo el día) cae en el periodo.
+// Las fechas que no se entienden cuentan como dentro, para no esconder movimientos.
+func (p Period) containsDate(s string) bool {
+	if t, ok := parseTime(s); ok {
+		return p.contains(t.In(colombia))
+	}
+	if d, err := time.ParseInLocation("2006-01-02", s, colombia); err == nil {
+		return p.contains(d)
+	}
+	return true
+}
+
+// perShipment arma la cuenta de cada envío juntando, por número de guía, los abonos y devoluciones
+// a los créditos y los cargos extra.
+func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCharge) ([]ShipmentMoney, Money) {
+	type back struct {
+		amount float64
+		last   string
+	}
+	returned := map[string]back{}
+	for _, m := range movs {
+		if m.Tracking == "" || (m.Kind != "refund" && m.Kind != "deposit") {
+			continue
+		}
+		b := returned[m.Tracking]
+		b.amount += m.Amount
+		if m.Date > b.last {
+			b.last = m.Date
+		}
+		returned[m.Tracking] = b
+	}
+	extra := map[string]float64{}
+	for _, e := range extras {
+		if e.Tracking != "" {
+			extra[e.Tracking] += e.Amount
+		}
+	}
+
+	var total Money
+	out := make([]ShipmentMoney, 0, len(shipments))
+	for _, s := range shipments {
+		status := s.OnDelivery
+		if s.Cancelled {
+			status = "cancelled"
+		}
+		row := ShipmentMoney{
+			Date: s.Date, Tracking: s.Tracking, Customer: s.Customer, Status: status,
+			LabelCost: s.Cost, CustomerPays: s.CODAmount,
+		}
+		if s.Tracking != "" {
+			b := returned[s.Tracking]
+			row.Returned, row.ReturnedAt = b.amount, b.last
+			row.Extra = extra[s.Tracking]
+		}
+		if row.Returned > 0 {
+			total.Count++
+			total.Amount += row.Returned
+		}
+		out = append(out, row)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Date > out[j].Date })
+	return out, total
 }
 
 // financeShipment es lo que el resumen necesita de cada envío.
 type financeShipment struct {
+	Date       string
+	Tracking   string
+	Customer   string
 	OrderID    string
 	Cancelled  bool
 	OnDelivery string  // pending | collected | failed | cancelled | vacío
@@ -171,11 +271,32 @@ type financeShipment struct {
 
 // financeShipments toma los envíos creados dentro del periodo.
 func financeShipments(list ShipmentList, p Period) []financeShipment {
+	names := map[string]string{} // id de la dirección -> nombre del destinatario
+	for _, raw := range list.Included {
+		var inc struct {
+			ID         string `json:"id"`
+			Type       string `json:"type"`
+			Attributes struct {
+				Name string `json:"name"`
+			} `json:"attributes"`
+		}
+		if json.Unmarshal(raw, &inc) == nil && inc.Type == "address" {
+			names[inc.ID] = inc.Attributes.Name
+		}
+	}
 	var out []financeShipment
 	for _, raw := range list.Data {
 		var s struct {
+			Relationships struct {
+				AddressTo struct {
+					Data *struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				} `json:"address_to"`
+			} `json:"relationships"`
 			Attributes struct {
 				CreatedAt        string          `json:"created_at"`
+				Tracking         string          `json:"master_tracking_number"`
 				OrderID          string          `json:"order_id"`
 				WorkflowStatus   string          `json:"workflow_status"`
 				OnDeliveryStatus string          `json:"on_delivery_status"`
@@ -190,7 +311,14 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 		if !ok || !p.contains(created.In(colombia)) {
 			continue
 		}
+		var customer string
+		if to := s.Relationships.AddressTo.Data; to != nil {
+			customer = names[to.ID]
+		}
 		out = append(out, financeShipment{
+			Date:       s.Attributes.CreatedAt,
+			Tracking:   s.Attributes.Tracking,
+			Customer:   customer,
 			OrderID:    s.Attributes.OrderID,
 			Cancelled:  s.Attributes.WorkflowStatus == "cancelled",
 			OnDelivery: s.Attributes.OnDeliveryStatus,
