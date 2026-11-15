@@ -22,6 +22,7 @@ Las ventas anteriores conservan el valor de su momento.
 
 🔔 <b>AVISOS AUTOMÁTICOS</b>
 📦 Orden nueva → con el botón 🚚 para generar la guía
+🚚 La transportadora recibió el paquete → ya va en camino
 💵 ¡Pagaron! → el paquete se entregó y el cliente pagó
 ❌ No se pudo cobrar → el paquete va en devolución
 ⚠️ No pudieron entregar → llama al cliente, la transportadora reintenta

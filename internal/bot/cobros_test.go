@@ -107,3 +107,13 @@ func TestResumenTexto(t *testing.T) {
 		}
 	}
 }
+
+func TestAvisoRecogida(t *testing.T) {
+	e := skydropx.CODShipment{Tracking: "240065822548", Customer: "Aracely", City: "Montería"}
+	msg := incidenciaMensaje(e, "picked_up", "", "https://siguetuenvio.interrapidisimo.com/")
+	for _, want := range []string{"La transportadora recibió el paquete", "Aracely", "240065822548", "Ya va en camino"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("falta %q en:\n%s", want, msg)
+		}
+	}
+}

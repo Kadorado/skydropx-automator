@@ -78,15 +78,19 @@ func cobroMensaje(e skydropx.CODShipment, pays, product float64) string {
 		cliente, html.EscapeString(e.Tracking), formatCOP(pays), detalle)
 }
 
-// avisoIncidencia avisa en el grupo de gestión un problema de entrega (intento fallido, novedad de la
-// transportadora o paquete en oficina) para llamar al cliente antes de que el envío se devuelva.
-// Cada problema se avisa una vez por día.
+// avisoIncidencia avisa en el grupo de gestión que la transportadora recibió el paquete, o un problema
+// de entrega (intento fallido, novedad o paquete en oficina) para llamar al cliente antes de que el envío
+// se devuelva. La recogida se avisa una sola vez; cada problema, una vez por día.
 func (b *Bot) avisoIncidencia(shipmentID, status, tracking, detalle, trackingURL string) {
 	if shipmentID == "" {
 		return
 	}
 	day := time.Now().In(colombiaTZ).Format("2006-01-02")
-	nuevo, err := b.st.marcarAviso(shipmentID+":"+status+":"+day, day)
+	key := shipmentID + ":" + status
+	if status != "picked_up" {
+		key += ":" + day
+	}
+	nuevo, err := b.st.marcarAviso(key, day)
 	if err != nil {
 		log.Printf("bot: no se pudo guardar el aviso de entrega: %v", err)
 	}
@@ -119,6 +123,8 @@ func (b *Bot) avisoIncidencia(shipmentID, status, tracking, detalle, trackingURL
 func incidenciaMensaje(e skydropx.CODShipment, status, detalle, trackingURL string) string {
 	titulo, accion := "🚨 <b>Novedad con el envío</b>", "Revisa con el cliente o con la transportadora para que no se devuelva."
 	switch status {
+	case "picked_up":
+		titulo, accion = "🚚 <b>La transportadora recibió el paquete</b>", "Ya va en camino. Puedes avisarle al cliente."
 	case "delivery_attempt":
 		titulo, accion = "⚠️ <b>No pudieron entregar</b>", "Llama al cliente para que esté pendiente: la transportadora vuelve a intentar."
 	case "delivered_to_branch":
