@@ -1,5 +1,12 @@
 package bot
 
+import (
+	"context"
+	"log"
+
+	"skydropx-automator/internal/telegram"
+)
+
 // Textos de /ayuda de cada grupo, pensados para fijarlos en el chat. Si se agregan comandos,
 // se actualizan aquí y se vuelve a fijar la respuesta de /ayuda.
 
@@ -13,6 +20,9 @@ const ayudaGestion = `📌 <b>GRUPO DE GESTIÓN — Comandos y avisos</b>
 /resumen → lo de hoy y lo que va del mes
 /resumen semana → la semana anterior (lunes a domingo)
 Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
+
+📋 <b>NOVEDADES PARA GESTIONAR</b>
+/novedades → envíos de los últimos 45 días que hay que gestionar con el cliente: en devolución o sin cobrar, intentos de entrega fallidos, en oficina y con novedad. Trae teléfono, ciudad, guía y último evento.
 
 🤝 <b>COMISIÓN DEL VENDEDOR</b>
 /comision → ver el valor actual por datáfono y los cambios
@@ -55,3 +65,37 @@ Valor: 60000</code>
 ✅ La guía lista, con el número, el rastreo y el PDF para enviarle al cliente
 
 /ayuda → ver esta ayuda`
+
+// Menús de comandos de cada grupo (lo que Telegram sugiere al escribir "/").
+var (
+	comandosGestion = []telegram.Command{
+		{Command: "novedades", Description: "Envíos para gestionar: devoluciones, intentos fallidos, oficina"},
+		{Command: "resumen", Description: "Resumen de hoy y del mes (/resumen semana: la anterior)"},
+		{Command: "imprimir", Description: "Guías de hoy en hojas de 4 (/imprimir 3: últimos 3 días)"},
+		{Command: "comision", Description: "Ver o cambiar la comisión del vendedor por datáfono"},
+		{Command: "ayuda", Description: "Ver todos los comandos y avisos"},
+	}
+	comandosVendedor = []telegram.Command{
+		{Command: "ayuda", Description: "Cómo enviar un pedido"},
+	}
+)
+
+// configurarComandos fija el menú de comandos de tus grupos y del vendedor al arrancar.
+func (b *Bot) configurarComandos(ctx context.Context) {
+	for _, id := range b.gestionChats() {
+		if err := b.tg.SetChatCommands(ctx, id, comandosGestion); err != nil {
+			log.Printf("bot: no se pudo fijar el menú de comandos del grupo de gestión: %v", err)
+		}
+	}
+	vendedor := append(append([]int64(nil), b.opts.AdminChatIDs...), b.opts.AllowedChatIDs...)
+	visto := map[int64]bool{}
+	for _, id := range vendedor {
+		if visto[id] || b.isGestion(id) {
+			continue
+		}
+		visto[id] = true
+		if err := b.tg.SetChatCommands(ctx, id, comandosVendedor); err != nil {
+			log.Printf("bot: no se pudo fijar el menú de comandos del chat %d: %v", id, err)
+		}
+	}
+}

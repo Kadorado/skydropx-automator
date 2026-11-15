@@ -15,6 +15,7 @@ type Status struct {
 	LastDate   string `json:"last_date"`  // fecha del último evento (ISO)
 	Cobro      string `json:"cobro"`      // cobrado | por_cobrar | no_aplica
 	CobroLabel string `json:"cobro_label"`
+	Raw        string `json:"raw,omitempty"` // estado técnico del último evento (delivery_attempt, in_return…)
 }
 
 type cachedStatus struct {
@@ -143,8 +144,9 @@ func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (
 		}
 	}
 
-	st := Status{LastEvent: lastDesc, LastDate: lastDate, Key: "creado", Label: "Creado"}
+	st := Status{LastEvent: lastDesc, LastDate: lastDate, Key: "creado", Label: "Creado", Raw: stStatus}
 	if delivered {
+		st.Raw = "delivered"
 		st.Key, st.Label = "entregado", "Entregado"
 	} else if stStatus != "" {
 		st.Key, st.Label = keyOf(stStatus)

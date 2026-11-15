@@ -117,3 +117,34 @@ func TestAvisoRecogida(t *testing.T) {
 		}
 	}
 }
+
+func TestNovedadesMensajes(t *testing.T) {
+	if msgs := novedadesMensajes(nil, 12); len(msgs) != 1 || !strings.Contains(msgs[0], "Sin novedades") {
+		t.Fatalf("sin problemas: %q", msgs)
+	}
+	problemas := []skydropx.Problema{
+		{CODShipment: skydropx.CODShipment{Tracking: "G1", Customer: "Ana", Phone: "300"}, Kind: "intento", LastEvent: "Destinatario ausente", LastDate: "2026-11-13T15:00:00Z"},
+		{CODShipment: skydropx.CODShipment{Tracking: "G2", Customer: "Luis"}, Kind: "devolucion", LastEvent: "En devolución"},
+	}
+	msgs := novedadesMensajes(problemas, 20)
+	if len(msgs) != 3 {
+		t.Fatalf("se esperaban encabezado + 2 grupos: %q", msgs)
+	}
+	// Las devoluciones van primero por ser lo más urgente.
+	if !strings.Contains(msgs[1], "En devolución o sin cobrar") || !strings.Contains(msgs[1], "Luis") {
+		t.Fatalf("primer grupo inesperado: %s", msgs[1])
+	}
+	if !strings.Contains(msgs[2], "No pudieron entregar") || !strings.Contains(msgs[2], "📞 300") || !strings.Contains(msgs[2], "(13 nov)") {
+		t.Fatalf("segundo grupo inesperado: %s", msgs[2])
+	}
+	// Muchos envíos se parten en varios mensajes que caben en Telegram.
+	var muchos []skydropx.Problema
+	for i := 0; i < 80; i++ {
+		muchos = append(muchos, skydropx.Problema{CODShipment: skydropx.CODShipment{Tracking: "240065822548", Customer: "Cliente con un nombre largo", Phone: "3001234567", City: "Montería"}, Kind: "intento", LastEvent: "Destinatario ausente, se reintenta mañana"})
+	}
+	for _, m := range novedadesMensajes(muchos, 80) {
+		if len(m) > 4096 {
+			t.Fatalf("mensaje de %d caracteres supera el límite de Telegram", len(m))
+		}
+	}
+}

@@ -231,3 +231,21 @@ func TestComisionSegunFechaDelEnvio(t *testing.T) {
 		t.Fatalf("comisión %+v, se esperaba 42000 cobrados y 12000 por cobrar", f.Commission)
 	}
 }
+
+func TestProblemaKind(t *testing.T) {
+	cases := []struct{ onDelivery, raw, event, want string }{
+		{"pending", "delivered", "Entregado", ""},
+		{"failed", "", "", "devolucion"},
+		{"pending", "in_return", "", "devolucion"},
+		{"pending", "in_transit", "Envío en devolución al remitente", "devolucion"},
+		{"pending", "delivery_attempt", "Destinatario ausente", "intento"},
+		{"pending", "delivered_to_branch", "", "oficina"},
+		{"pending", "exception", "Dirección errada", "novedad"},
+		{"pending", "in_transit", "En camino", ""},
+	}
+	for _, c := range cases {
+		if got := problemaKind(c.onDelivery, c.raw, c.event); got != c.want {
+			t.Errorf("problemaKind(%q,%q,%q) = %q, se esperaba %q", c.onDelivery, c.raw, c.event, got, c.want)
+		}
+	}
+}

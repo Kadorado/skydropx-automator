@@ -313,6 +313,7 @@ type financeShipment struct {
 	ID         string
 	Date       string
 	Tracking   string
+	Carrier    string
 	Customer   string
 	Phone      string
 	City       string
@@ -357,6 +358,7 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 			Attributes struct {
 				CreatedAt        string          `json:"created_at"`
 				Tracking         string          `json:"master_tracking_number"`
+				Carrier          string          `json:"carrier_name"`
 				OrderID          string          `json:"order_id"`
 				WorkflowStatus   string          `json:"workflow_status"`
 				OnDeliveryStatus string          `json:"on_delivery_status"`
@@ -379,6 +381,7 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 			ID:         s.ID,
 			Date:       s.Attributes.CreatedAt,
 			Tracking:   s.Attributes.Tracking,
+			Carrier:    s.Attributes.Carrier,
 			Customer:   to.name,
 			Phone:      to.phone,
 			City:       to.city,

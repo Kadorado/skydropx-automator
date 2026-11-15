@@ -2,6 +2,7 @@ package skydropx
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -51,4 +52,67 @@ func (c *Client) CODAmounts(ctx context.Context, s CODShipment) (pays, product f
 	}
 	fs := financeShipment{CODAmount: s.Reported, Cost: s.Cost, Product: product}
 	return fs.customerPays(), product
+}
+
+// Problema es un envío abierto que hay que gestionar con el cliente.
+type Problema struct {
+	CODShipment
+	Kind      string // devolucion | intento | oficina | novedad
+	LastEvent string // último evento de rastreo
+	LastDate  string
+}
+
+// Problemas revisa los envíos con guía creados desde since que no se han entregado ni cobrado y devuelve
+// los que están en devolución o sin cobrar, con intento de entrega fallido, en oficina o con novedad.
+// Consulta el rastreo de cada uno (con caché y respetando el límite de la API).
+func (c *Client) Problemas(ctx context.Context, since time.Time) ([]Problema, int, error) {
+	if c.isMock() {
+		return nil, 0, ErrMockMode
+	}
+	list, err := c.ListShipments(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	p := Period{From: since, To: time.Now().In(colombia).Add(24 * time.Hour)}
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	var out []Problema
+	revisados := 0
+	for _, s := range withLabel(financeShipments(list, p)) {
+		if s.Cancelled || s.OnDelivery == "collected" {
+			continue
+		}
+		pr := Problema{CODShipment: CODShipment{
+			ID: s.ID, Tracking: s.Tracking, Customer: s.Customer, Phone: s.Phone, City: s.City, OrderID: s.OrderID,
+			Status: s.OnDelivery, Reported: s.CODAmount, Cost: s.Cost,
+		}}
+		revisados++
+		st, err := c.trackingStatus(ctx, s.Tracking, s.Carrier)
+		if err != nil && ctx.Err() != nil {
+			return out, revisados, ctx.Err()
+		}
+		pr.LastEvent, pr.LastDate = st.LastEvent, st.LastDate
+		pr.Kind = problemaKind(s.OnDelivery, st.Raw, st.LastEvent)
+		if pr.Kind != "" {
+			out = append(out, pr)
+		}
+	}
+	return out, revisados, nil
+}
+
+// problemaKind clasifica un envío según su cobro y su último evento de rastreo ("" si va bien).
+func problemaKind(onDelivery, raw, lastEvent string) string {
+	switch {
+	case raw == "delivered":
+		return ""
+	case onDelivery == "failed" || raw == "in_return" || strings.Contains(strings.ToLower(lastEvent), "devoluci"):
+		return "devolucion"
+	case raw == "delivery_attempt":
+		return "intento"
+	case raw == "delivered_to_branch":
+		return "oficina"
+	case raw == "exception":
+		return "novedad"
+	}
+	return ""
 }

@@ -152,6 +152,21 @@ func (c *Client) AnswerCallback(ctx context.Context, callbackID, text string) er
 }
 
 // SendDocument envía un archivo (por ejemplo, el PDF de las guías) con un texto opcional en HTML.
+// Command es un comando del menú que Telegram muestra al escribir "/".
+type Command struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+// SetChatCommands fija el menú de comandos de un chat (grupo o privado) en particular.
+func (c *Client) SetChatCommands(ctx context.Context, chatID int64, cmds []Command) error {
+	payload := map[string]any{
+		"commands": cmds,
+		"scope":    map[string]any{"type": "chat", "chat_id": chatID},
+	}
+	return c.call(ctx, "setMyCommands", payload, nil)
+}
+
 func (c *Client) SendDocument(ctx context.Context, chatID int64, filename string, data []byte, caption string) error {
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)

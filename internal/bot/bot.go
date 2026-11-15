@@ -53,6 +53,7 @@ func New(opts Options, sky *skydropx.Client) (*Bot, error) {
 
 // Run atiende mensajes y revisa guías hasta que ctx termine.
 func (b *Bot) Run(ctx context.Context) {
+	b.configurarComandos(ctx)
 	go b.watchGuias(ctx)
 	go b.watchResumenes(ctx)
 
@@ -95,6 +96,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			b.comandoResumen(ctx, chatID, text)
 			return
 		}
+		if strings.HasPrefix(text, "/novedades") {
+			b.comandoNovedades(ctx, chatID)
+			return
+		}
 		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
 			b.say(ctx, chatID, ayudaGestion)
 			return
@@ -109,7 +114,7 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 		return
 	}
 	// La comisión y los resúmenes solo se manejan desde el grupo de gestión.
-	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") {
+	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") {
 		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
 		return
 	}
