@@ -60,6 +60,7 @@ type Problema struct {
 	Kind      string // devolucion | intento | oficina | novedad
 	LastEvent string // último evento de rastreo
 	LastDate  string
+	History   []TrackEvent // últimos eventos, del más nuevo al más antiguo
 }
 
 // Problemas revisa los envíos con guía creados desde since que no se han entregado ni cobrado y devuelve
@@ -91,7 +92,7 @@ func (c *Client) Problemas(ctx context.Context, since time.Time) ([]Problema, in
 		if err != nil && ctx.Err() != nil {
 			return out, revisados, ctx.Err()
 		}
-		pr.LastEvent, pr.LastDate = st.LastEvent, st.LastDate
+		pr.LastEvent, pr.LastDate, pr.History = st.LastEvent, st.LastDate, st.History
 		pr.Kind = problemaKind(s.OnDelivery, st.Raw, st.LastEvent)
 		if pr.Kind != "" {
 			out = append(out, pr)

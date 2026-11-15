@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"skydropx-automator/internal/skydropx"
 )
@@ -145,6 +146,25 @@ func TestNovedadesMensajes(t *testing.T) {
 	for _, m := range novedadesMensajes(muchos, 80) {
 		if len(m) > 4096 {
 			t.Fatalf("mensaje de %d caracteres supera el límite de Telegram", len(m))
+		}
+	}
+}
+
+func TestNovedadMuestraHistorial(t *testing.T) {
+	llego, _ := time.Parse(time.RFC3339, "2026-11-14T15:30:00-05:00")
+	camino, _ := time.Parse(time.RFC3339, "2026-11-13T09:00:00-05:00")
+	p := skydropx.Problema{
+		CODShipment: skydropx.CODShipment{Tracking: "240065695027", Customer: "Yhon Jarby Torres Rivera"},
+		Kind:        "oficina",
+		History: []skydropx.TrackEvent{
+			{Date: llego, Description: "Reclame en oficina"},
+			{Date: camino, Description: "En tránsito a ciudad destino"},
+		},
+	}
+	item := novedadItem(p)
+	for _, want := range []string{"Últimos eventos", "14 nov 3:30 p. m. — Reclame en oficina", "13 nov 9:00 a. m. — En tránsito a ciudad destino"} {
+		if !strings.Contains(item, want) {
+			t.Errorf("falta %q en:\n%s", want, item)
 		}
 	}
 }

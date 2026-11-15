@@ -23,7 +23,7 @@ var gruposNovedad = []struct {
 }{
 	{"devolucion", "❌ <b>En devolución o sin cobrar</b>", "Llama al cliente: a veces se puede reprogramar antes de que llegue de vuelta."},
 	{"intento", "⚠️ <b>No pudieron entregar</b>", "Llama al cliente para que esté pendiente del reintento."},
-	{"oficina", "🏢 <b>En la oficina de la transportadora</b>", "Avísale al cliente que lo recoja y pague ahí."},
+	{"oficina", "🏢 <b>Para reclamar en oficina</b>", "Mira el historial: si ya llegó a la oficina de destino, avísale al cliente que lo recoja y pague ahí."},
 	{"novedad", "🚨 <b>Con novedad</b>", "Revisa con el cliente o con la transportadora."},
 }
 
@@ -92,11 +92,28 @@ func novedadItem(p skydropx.Problema) string {
 		fmt.Fprintf(&b, " · 📍 %s", html.EscapeString(p.City))
 	}
 	fmt.Fprintf(&b, "\n📦 %s", html.EscapeString(p.Tracking))
-	if ev := strings.TrimSpace(p.LastEvent); ev != "" {
+	if len(p.History) > 0 {
+		b.WriteString("\n🕒 <b>Últimos eventos:</b>")
+		for _, ev := range p.History {
+			desc := strings.TrimSpace(ev.Description)
+			if desc == "" {
+				desc = ev.Status
+			}
+			fmt.Fprintf(&b, "\n   • %s — %s", diaHora(ev.Date.In(colombiaTZ)), html.EscapeString(desc))
+		}
+	} else if ev := strings.TrimSpace(p.LastEvent); ev != "" {
 		fmt.Fprintf(&b, "\n📝 %s", html.EscapeString(ev))
 		if t, err := time.Parse(time.RFC3339Nano, p.LastDate); err == nil {
 			fmt.Fprintf(&b, " (%s)", diaCorto(t.In(colombiaTZ)))
 		}
 	}
 	return b.String()
+}
+
+func diaHora(t time.Time) string {
+	ampm := "a. m."
+	if t.Hour() >= 12 {
+		ampm = "p. m."
+	}
+	return fmt.Sprintf("%s %s %s", diaCorto(t), t.Format("3:04"), ampm)
 }
