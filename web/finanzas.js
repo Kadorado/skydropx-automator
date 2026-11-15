@@ -203,24 +203,53 @@
     return d.toLocaleDateString("es-CO", { timeZone: TZ, day: "numeric", month: "short" });
   }
 
-  // Qué pasó con la plata del envío, en palabras.
-  function devolucionTexto(e) {
-    if (e.returned > 0) {
-      return { main: `+${money(e.returned)}`, sub: e.returned_at ? `volvió el ${fmtShortDay(e.returned_at)}` : "volvió a tus créditos", cls: "text-emerald-600" };
+  // Lo que pasa con la plata de un envío. Lo cobrado al cliente (producto + envío) llega al saldo
+  // disponible de Skydropx, que la API no deja consultar: se calcula con lo que paga el cliente.
+  // Lo que realmente salió de los créditos por la guía (guía + tarifa de servicio + protección);
+  // si Skydropx no trae los movimientos, se usa el costo del envío.
+  const costoReal = (e) => (e.charged > 0 ? e.charged : e.label_cost || 0) + (e.extra || 0);
+
+  const CONCEPTO_COBRO = { guia: "guía", servicio: "tarifa de servicio", proteccion: "Protección Plus", otro: "otros" };
+
+  function cuentaEnvio(e) {
+    const costo = costoReal(e);
+    const credito = e.returned || 0; // devoluciones a los créditos (p. ej. guía cancelada)
+    switch (e.status) {
+      case "collected":
+        return { entra: e.customer_pays, entraSub: "ya está en tu saldo disponible", entraCls: "text-emerald-600",
+          queda: e.customer_pays - costo + credito, quedaSub: "tu producto, ya sin el envío" };
+      case "pending":
+        return { entra: e.customer_pays, entraSub: "te entra cuando el cliente pague", entraCls: "text-amber-600",
+          queda: e.customer_pays - costo + credito, quedaSub: "cuando se cobre" , pendiente: true };
+      case "failed":
+        return { entra: 0, entraSub: "el cliente no pagó", entraCls: "text-rose-500",
+          queda: credito - costo, quedaSub: "perdiste el envío" };
+      case "cancelled":
+        return { entra: 0, entraSub: "guía cancelada", entraCls: "text-slate-400",
+          queda: credito - costo, quedaSub: credito ? "te devolvieron la guía" : "sin devolución registrada" };
+      default:
+        return { entra: 0, entraSub: "", entraCls: "text-slate-400", queda: credito - costo, quedaSub: "" };
     }
-    if (e.status === "collected") return { main: "Nada todavía", sub: "cobrado, sin abono a tus créditos", cls: "text-slate-500" };
-    if (e.status === "pending") return { main: "—", sub: "esperando que el cliente pague", cls: "text-slate-400" };
-    if (e.status === "failed") return { main: "—", sub: "el cliente no pagó", cls: "text-rose-500" };
-    if (e.status === "cancelled") return { main: "—", sub: "guía cancelada", cls: "text-slate-400" };
-    return { main: "—", sub: "", cls: "text-slate-400" };
   }
+
+  // Lo que paga el cliente se arma como producto + envío (igual que en el mensaje del bot),
+  // así que al cobrarse se separa en esas dos partes.
+  function desglose(e) {
+    const envio = Math.min(e.label_cost || 0, e.customer_pays || 0);
+    return { producto: (e.customer_pays || 0) - envio, envio };
+  }
+
+  const signed = (v) => `${v < 0 ? "−" : "+"}${money(Math.abs(v))}`;
 
   function renderPorEnvio(f) {
     const list = f.per_shipment || [];
     const activos = list.filter((e) => e.status !== "cancelled");
-    const gastado = activos.reduce((t, e) => t + (e.label_cost || 0) + (e.extra || 0), 0);
-    const ret = f.returned || {};
-    const cobradosSin = activos.filter((e) => e.status === "collected" && !(e.returned > 0)).length;
+    const gastado = activos.reduce((t, e) => t + costoReal(e) - (e.returned || 0), 0);
+    const sum = (st) => activos.filter((e) => e.status === st).reduce((t, e) => t + (e.customer_pays || 0), 0);
+    const cobrados = activos.filter((e) => e.status === "collected");
+    const netoCobrados = cobrados.reduce((t, e) => t + cuentaEnvio(e).queda, 0);
+    const prodCobrado = cobrados.reduce((t, e) => t + desglose(e).producto, 0);
+    const envioDevuelto = cobrados.reduce((t, e) => t + desglose(e).envio, 0);
 
     const box = (label, value, sub, cls) => `
       <div class="rounded-xl bg-slate-50 px-2 py-3">
@@ -229,9 +258,10 @@
         <p class="text-[11px] text-slate-400">${sub}</p>
       </div>`;
     $("fin-env-resumen").innerHTML =
-      box("Gastaste en envíos", `−${money(gastado)}`, plural(activos.length, "guía", "guías"), "text-slate-900") +
-      box("Volvió a tus créditos", `+${money(ret.amount)}`, plural(ret.count || 0, "envío", "envíos"), "text-emerald-600") +
-      box("Cobrados sin abono", String(cobradosSin), cobradosSin === 1 ? "envío" : "envíos", cobradosSin ? "text-amber-600" : "text-slate-900");
+      box("Pagaste en envíos", `−${money(gastado)}`, plural(activos.length, "guía", "guías"), "text-slate-900") +
+      box("Ya te entró", `+${money(sum("collected"))}`, `${money(prodCobrado)} producto + ${money(envioDevuelto)} envíos`, "text-emerald-600") +
+      box("Por entrar", `+${money(sum("pending"))}`, "cuando paguen", "text-amber-600") +
+      box("Te quedó de lo cobrado", signed(netoCobrados), "ya sin el envío", "text-slate-900");
 
     $("fin-env-count").textContent = list.length ? plural(list.length, "envío", "envíos") : "";
     if (!list.length) {
@@ -241,10 +271,10 @@
     $("fin-env-lista").innerHTML = list
       .map((e) => {
         const st = ESTADO_COBRO[e.status] || { label: e.status || "Sin estado", cls: "bg-slate-100 text-slate-500" };
-        const dev = devolucionTexto(e);
+        const c = cuentaEnvio(e);
         return `
-          <div class="grid grid-cols-2 gap-x-4 gap-y-2 px-5 py-3.5 text-sm sm:grid-cols-[1.6fr_1fr_1fr_1.2fr] sm:items-center sm:px-7 ${e.status === "cancelled" ? "opacity-60" : ""}">
-            <div class="col-span-2 min-w-0 sm:col-span-1">
+          <div class="grid grid-cols-3 gap-x-4 gap-y-2 px-5 py-3.5 text-sm sm:grid-cols-[1.6fr_1fr_1.2fr_1.1fr] sm:items-center sm:px-7 ${e.status === "cancelled" ? "opacity-60" : ""}">
+            <div class="col-span-3 min-w-0 sm:col-span-1">
               <div class="flex items-center gap-2">
                 <p class="truncate font-medium text-slate-800">${escapeHtml(e.customer || "Sin nombre")}</p>
                 <span class="badge ${st.cls} shrink-0">${st.label}</span>
@@ -252,18 +282,28 @@
               <p class="mt-0.5 text-xs text-slate-400">${escapeHtml(fmtShortDay(e.date))}${e.tracking ? ` · <span class="font-mono">${escapeHtml(e.tracking)}</span>` : ""}</p>
             </div>
             <div>
-              <p class="text-[11px] text-slate-400">Te costó el envío</p>
-              <p class="font-semibold tabular-nums text-slate-900">−${money(e.label_cost)}</p>
+              <p class="text-[11px] text-slate-400">Pagaste el envío</p>
+              <p class="font-semibold tabular-nums text-slate-900">−${money(costoReal(e) - (e.extra || 0))}</p>
+              ${Object.keys(e.charged_parts || {}).length > 1 ? Object.entries(e.charged_parts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => `<p class="text-xs text-slate-500 tabular-nums">${money(v)} ${escapeHtml(CONCEPTO_COBRO[k] || k)}</p>`).join("") : ""}
+              ${e.returned > 0 ? `<p class="text-xs font-medium text-emerald-600 tabular-nums">+${money(e.returned)} devuelto${e.returned_at ? ` el ${escapeHtml(fmtShortDay(e.returned_at))}` : ""}</p>` : ""}
               ${e.extra > 0 ? `<p class="text-xs font-medium text-rose-600">−${money(e.extra)} cargo extra</p>` : ""}
             </div>
             <div>
-              <p class="text-[11px] text-slate-400">El cliente paga</p>
-              <p class="font-semibold tabular-nums text-slate-700">${e.customer_pays ? money(e.customer_pays) : "—"}</p>
+              <p class="text-[11px] text-slate-400">Te entra</p>
+              <p class="font-semibold tabular-nums ${c.entraCls}">${c.entra ? `+${money(c.entra)}` : "—"}</p>
+              ${c.entra ? (() => {
+                const d = desglose(e);
+                return `<p class="text-xs text-slate-500 tabular-nums">${money(d.producto)} producto</p>
+                  <p class="text-xs text-slate-500 tabular-nums">+ ${money(d.envio)} envío ${e.status === "collected" ? "devuelto" : "a devolver"}</p>`;
+              })() : ""}
+              ${c.entraSub ? `<p class="text-xs text-slate-400">${escapeHtml(c.entraSub)}</p>` : ""}
             </div>
-            <div class="col-span-2 sm:col-span-1">
-              <p class="text-[11px] text-slate-400">Volvió a tus créditos</p>
-              <p class="font-semibold tabular-nums ${dev.cls}">${dev.main}</p>
-              ${dev.sub ? `<p class="text-xs text-slate-400">${escapeHtml(dev.sub)}</p>` : ""}
+            <div>
+              <p class="text-[11px] text-slate-400">Te queda</p>
+              <p class="font-bold tabular-nums ${c.pendiente ? "text-slate-400" : c.queda < 0 ? "text-rose-600" : "text-slate-900"}">${signed(c.queda)}</p>
+              ${c.quedaSub ? `<p class="text-xs text-slate-400">${escapeHtml(c.quedaSub)}</p>` : ""}
             </div>
           </div>`;
       })
@@ -273,6 +313,8 @@
   const CATEGORIAS = {
     guia: { label: "Cobros de guías al saldo", dot: "bg-indigo-500", sign: "-" },
     proteccion: { label: "Protección Plus", dot: "bg-violet-500", sign: "-" },
+    servicio: { label: "Tarifa de servicio", dot: "bg-sky-400", sign: "-" },
+    fee_recarga: { label: "Comisión de Mercado Pago", dot: "bg-cyan-500", sign: "-" },
     otro: { label: "Otros cobros", dot: "bg-slate-400", sign: "-" },
     devolucion: { label: "Devoluciones", dot: "bg-teal-500", sign: "+" },
     recarga: { label: "Recargas y abonos", dot: "bg-emerald-500", sign: "+" },
@@ -330,7 +372,8 @@
                 <span class="badge ${k.cls}">${escapeHtml(k.label)}</span>
                 <span class="text-slate-700">${escapeHtml(concepto)}</span>
               </div>
-              ${m.tracking ? `<p class="mt-0.5 font-mono text-xs text-slate-400">${escapeHtml(m.tracking)}</p>` : ""}
+              ${m.comment && m.comment !== concepto ? `<p class="mt-0.5 text-xs text-slate-500">${escapeHtml(m.comment)}</p>` : ""}
+              ${m.tracking ? `<p class="mt-0.5 font-mono text-xs text-slate-400">Guía ${escapeHtml(m.tracking)}</p>` : m.kind === "refund" ? `<p class="mt-0.5 text-xs text-slate-400">Sin guía asociada${m.related ? ` · ${escapeHtml(m.related)}` : ""}</p>` : ""}
             </td>
             <td class="whitespace-nowrap px-5 py-3 text-right font-semibold tabular-nums sm:px-7 ${k.sign === "+" ? "text-emerald-600" : "text-slate-900"}">${k.sign}${money(m.amount)}</td>
           </tr>`;

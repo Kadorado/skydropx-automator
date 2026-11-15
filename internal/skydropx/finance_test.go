@@ -67,6 +67,9 @@ func TestMovementCategory(t *testing.T) {
 		{"withdrawal", "Shipment", "Protección Plus", "proteccion"},
 		{"refund", "Shipment", "Cancelación", "devolucion"},
 		{"withdrawal", "", "Ajuste", "otro"},
+		{"withdrawal", "Shipment", "Pago de servicefee 89db279d", "servicio"},
+		{"withdrawal", "", "Fee Mercado Pago #187118512635", "fee_recarga"},
+		{"refund", "Shipment", "Protección Plus", "devolucion"},
 	}
 	for _, c := range casos {
 		if got := movementCategory(c.kind, c.typ, c.comment); got != c.want {
@@ -141,7 +144,8 @@ func TestPerShipmentJuntaDevolucionesPorGuia(t *testing.T) {
 		{Date: "2026-11-01T10:00:00Z", Tracking: "G3", OnDelivery: "failed", CODAmount: 70000, Cost: 10000},
 	}
 	movs := []Movement{
-		{Date: "2026-11-02T10:00:00Z", Kind: "withdrawal", Amount: 12000, Tracking: "G1"}, // cobro de la guía: no es devolución
+		{Date: "2026-11-02T10:00:00Z", Kind: "withdrawal", Category: "guia", Amount: 12000, Tracking: "G1"}, // cobro de la guía: no es devolución
+		{Date: "2026-11-02T10:00:00Z", Kind: "withdrawal", Category: "servicio", Amount: 300, Tracking: "G1"},
 		{Date: "2026-11-09T10:00:00Z", Kind: "refund", Amount: 12000, Tracking: "G1"},
 		{Date: "2026-11-05T10:00:00Z", Kind: "deposit", Amount: 50000}, // recarga sin guía
 	}
@@ -154,6 +158,9 @@ func TestPerShipmentJuntaDevolucionesPorGuia(t *testing.T) {
 	g1 := rows[1]
 	if g1.Returned != 12000 || g1.ReturnedAt != "2026-11-09T10:00:00Z" || g1.Customer != "Ana" {
 		t.Fatalf("G1: %+v", g1)
+	}
+	if g1.Charged != 12300 || g1.ChargedParts["servicio"] != 300 {
+		t.Fatalf("G1 descontado %v %+v", g1.Charged, g1.ChargedParts)
 	}
 	if rows[2].Extra != 9000 || rows[0].Returned != 0 {
 		t.Fatalf("G3 extra %v, G2 devuelto %v", rows[2].Extra, rows[0].Returned)

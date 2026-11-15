@@ -72,11 +72,12 @@ type Commission struct {
 type Movement struct {
 	Date     string  `json:"date"`
 	Kind     string  `json:"kind"`     // deposit | withdrawal | refund
-	Category string  `json:"category"` // recarga | guia | proteccion | devolucion | otro
+	Category string  `json:"category"` // recarga | guia | proteccion | servicio | fee_recarga | devolucion | otro
 	Amount   float64 `json:"amount"`
 	Tracking string  `json:"tracking"`
 	Comment  string  `json:"comment"`
 	Status   string  `json:"status"`
+	Related  string  `json:"related"` // tipo de lo que originó el movimiento (Shipment, Order…)
 }
 
 // ExtraCharge es un cargo extra de un envío (sobrepeso, envío no recaudado…).
@@ -91,15 +92,17 @@ type ExtraCharge struct {
 // ShipmentMoney es la cuenta de un envío: lo que costó la guía, lo que paga el cliente
 // y lo que volvió a los créditos con el mismo número de guía.
 type ShipmentMoney struct {
-	Date         string  `json:"date"`
-	Tracking     string  `json:"tracking"`
-	Customer     string  `json:"customer"`
-	Status       string  `json:"status"`        // pending | collected | failed | cancelled | vacío
-	LabelCost    float64 `json:"label_cost"`    // costo de la guía descontado de los créditos
-	CustomerPays float64 `json:"customer_pays"` // lo que la transportadora le cobra al cliente (producto + envío)
-	Returned     float64 `json:"returned"`      // abonos y devoluciones a los créditos con esta guía
-	ReturnedAt   string  `json:"returned_at"`   // fecha del último abono o devolución
-	Extra        float64 `json:"extra"`         // cargos extra de esta guía
+	Date         string             `json:"date"`
+	Tracking     string             `json:"tracking"`
+	Customer     string             `json:"customer"`
+	Status       string             `json:"status"`        // pending | collected | failed | cancelled | vacío
+	LabelCost    float64            `json:"label_cost"`    // costo de la guía según el envío (lo que se le suma al cliente)
+	Charged      float64            `json:"charged"`       // todo lo descontado de los créditos con esta guía
+	ChargedParts map[string]float64 `json:"charged_parts"` // lo descontado por concepto: guia, proteccion, servicio, otro
+	CustomerPays float64            `json:"customer_pays"` // lo que la transportadora le cobra al cliente (producto + envío)
+	Returned     float64            `json:"returned"`      // abonos y devoluciones a los créditos con esta guía
+	ReturnedAt   string             `json:"returned_at"`   // fecha del último abono o devolución
+	Extra        float64            `json:"extra"`         // cargos extra de esta guía
 }
 
 // Finance es el resumen de dinero de un periodo.
@@ -213,8 +216,19 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 		last   string
 	}
 	returned := map[string]back{}
+	charged := map[string]map[string]float64{}
 	for _, m := range movs {
-		if m.Tracking == "" || (m.Kind != "refund" && m.Kind != "deposit") {
+		if m.Tracking == "" {
+			continue
+		}
+		if m.Kind == "withdrawal" {
+			if charged[m.Tracking] == nil {
+				charged[m.Tracking] = map[string]float64{}
+			}
+			charged[m.Tracking][m.Category] += m.Amount
+			continue
+		}
+		if m.Kind != "refund" && m.Kind != "deposit" {
 			continue
 		}
 		b := returned[m.Tracking]
@@ -246,6 +260,10 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 			b := returned[s.Tracking]
 			row.Returned, row.ReturnedAt = b.amount, b.last
 			row.Extra = extra[s.Tracking]
+			row.ChargedParts = charged[s.Tracking]
+			for _, v := range row.ChargedParts {
+				row.Charged += v
+			}
 		}
 		if row.Returned > 0 {
 			total.Count++
@@ -413,7 +431,7 @@ func (c *Client) movements(ctx context.Context, p Period) ([]Movement, error) {
 			a := d.Attributes
 			out = append(out, Movement{
 				Date: a.Created, Kind: a.Kind, Category: movementCategory(a.Kind, a.Type, a.Comments),
-				Amount: parseAmount(a.Amount), Tracking: a.Tracking, Comment: a.Comments, Status: a.Status,
+				Amount: parseAmount(a.Amount), Tracking: a.Tracking, Comment: a.Comments, Status: a.Status, Related: a.Type,
 			})
 		}
 		if resp.Meta.NextPage == nil || len(resp.Data) == 0 {
@@ -427,12 +445,16 @@ func (c *Client) movements(ctx context.Context, p Period) ([]Movement, error) {
 func movementCategory(kind, typ, comments string) string {
 	c := strings.ToLower(comments + " " + typ)
 	switch {
+	case kind == "refund": // devolver una protección o una tarifa no es un gasto
+		return "devolucion"
 	case strings.Contains(c, "protec") || strings.Contains(c, "seguro") || strings.Contains(c, "insurance"):
 		return "proteccion"
+	case strings.Contains(c, "servicefee") || strings.Contains(c, "service fee"):
+		return "servicio"
+	case strings.Contains(c, "mercado pago") || strings.Contains(c, "mercadopago"):
+		return "fee_recarga"
 	case kind == "deposit":
 		return "recarga"
-	case kind == "refund":
-		return "devolucion"
 	case kind == "withdrawal" && strings.Contains(c, "shipment"):
 		return "guia"
 	default:
