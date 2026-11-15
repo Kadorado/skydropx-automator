@@ -137,7 +137,7 @@ func (c *Client) Finance(ctx context.Context, p Period, perUnit float64) (Financ
 		return Finance{}, err
 	}
 
-	shipments := financeShipments(list, p)
+	shipments := withLabel(financeShipments(list, p))
 	var orderIDs []string
 	for _, s := range shipments {
 		if s.OrderID != "" && !s.Cancelled {
@@ -254,7 +254,7 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 		}
 		row := ShipmentMoney{
 			Date: s.Date, Tracking: s.Tracking, Customer: s.Customer, Status: status,
-			LabelCost: s.Cost, CustomerPays: s.CODAmount,
+			LabelCost: s.Cost, CustomerPays: s.CODAmount + s.Cost, // la transportadora cobra el producto más el envío
 		}
 		if s.Tracking != "" {
 			b := returned[s.Tracking]
@@ -275,6 +275,17 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 	return out, total
 }
 
+// withLabel deja fuera los envíos sin número de guía: intentos fallidos que nunca se generaron ni se pagaron.
+func withLabel(shipments []financeShipment) []financeShipment {
+	out := shipments[:0:0]
+	for _, s := range shipments {
+		if !s.NoLabel {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // financeShipment es lo que el resumen necesita de cada envío.
 type financeShipment struct {
 	Date       string
@@ -282,8 +293,9 @@ type financeShipment struct {
 	Customer   string
 	OrderID    string
 	Cancelled  bool
+	NoLabel    bool    // no tiene número de guía: falló o no se generó, no se pagó
 	OnDelivery string  // pending | collected | failed | cancelled | vacío
-	CODAmount  float64 // monto a cobrar al cliente
+	CODAmount  float64 // valor del producto a cobrar (Skydropx no le suma el envío)
 	Cost       float64 // costo de la guía
 }
 
@@ -339,6 +351,7 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 			Customer:   customer,
 			OrderID:    s.Attributes.OrderID,
 			Cancelled:  s.Attributes.WorkflowStatus == "cancelled",
+			NoLabel:    strings.TrimSpace(s.Attributes.Tracking) == "",
 			OnDelivery: s.Attributes.OnDeliveryStatus,
 			CODAmount:  parseAmount(s.Attributes.OnDeliveryAmount),
 			Cost:       parseAmount(s.Attributes.Total),
@@ -367,21 +380,21 @@ func summarizeShipments(shipments []financeShipment, qty map[string]int, perUnit
 		switch s.OnDelivery {
 		case "collected":
 			f.Collected.Count++
-			f.Collected.Amount += s.CODAmount
+			f.Collected.Amount += s.CODAmount + s.Cost
 			f.Commission.PaidUnits += units
 			if !known {
 				f.Commission.Estimated++
 			}
 		case "pending":
 			f.Pending.Count++
-			f.Pending.Amount += s.CODAmount
+			f.Pending.Amount += s.CODAmount + s.Cost
 			f.Commission.PendingUnits += units
 			if !known {
 				f.Commission.Estimated++
 			}
 		case "failed":
 			f.Failed.Count++
-			f.Failed.Amount += s.CODAmount
+			f.Failed.Amount += s.CODAmount + s.Cost
 		}
 	}
 	f.Commission.PaidAmount = float64(f.Commission.PaidUnits) * perUnit

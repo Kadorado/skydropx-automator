@@ -221,7 +221,12 @@
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "No se pudieron cargar los envíos");
       state.included = body.included || [];
-      state.items = (body.data || []).slice().sort(
+      // Los envíos sin guía son intentos fallidos que nunca se generaron; solo se muestran los recién
+      // creados (menos de 30 minutos), que pueden estar esperando el número de guía.
+      const recent = Date.now() - 30 * 60 * 1000;
+      state.items = (body.data || []).filter(
+        (s) => s.attributes.master_tracking_number || new Date(s.attributes.created_at) > recent
+      ).sort(
         (a, b) => new Date(b.attributes.created_at) - new Date(a.attributes.created_at)
       );
       state.truncated = !!body.truncated;

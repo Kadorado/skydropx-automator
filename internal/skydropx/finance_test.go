@@ -30,7 +30,7 @@ func TestSummarizeShipmentsComision(t *testing.T) {
 	if c.PendingUnits != 4 || c.PendingAmount != 60000 || c.Estimated != 1 {
 		t.Fatalf("por cobrar: %d datáfonos / %v (estimados %d), se esperaban 4 / 60000 (1)", c.PendingUnits, c.PendingAmount, c.Estimated)
 	}
-	if f.Collected != (Money{2, 144573}) || f.Pending != (Money{2, 205000}) || f.Failed != (Money{1, 70000}) {
+	if f.Collected != (Money{2, 169146}) || f.Pending != (Money{2, 230000}) || f.Failed != (Money{1, 80000}) { // producto + envío
 		t.Fatalf("contra entrega inesperado: cobrado %+v, por cobrar %+v, fallido %+v", f.Collected, f.Pending, f.Failed)
 	}
 	if f.Shipments != 6 || f.Cancelled != 1 || f.LabelCost != (Money{5, 59573}) {
@@ -85,8 +85,8 @@ func TestFinanceCompleto(t *testing.T) {
 	})
 	mux.HandleFunc("GET /api/v1/shipments", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"data":[
-			{"id":"s1","attributes":{"created_at":"2026-11-10T15:00:00Z","order_id":"o1","on_delivery_status":"collected","on_delivery_amount":72573.0,"total":"12573.0"}},
-			{"id":"s2","attributes":{"created_at":"2026-11-12T15:00:00Z","order_id":"o2","on_delivery_status":"pending","on_delivery_amount":72000.0,"total":"12000.0"}}
+			{"id":"s1","attributes":{"created_at":"2026-11-10T15:00:00Z","order_id":"o1","master_tracking_number":"240001","on_delivery_status":"collected","on_delivery_amount":72573.0,"total":"12573.0"}},
+			{"id":"s2","attributes":{"created_at":"2026-11-12T15:00:00Z","order_id":"o2","master_tracking_number":"240002","on_delivery_status":"pending","on_delivery_amount":72000.0,"total":"12000.0"}}
 		],"meta":{"total_pages":1}}`)
 	})
 	mux.HandleFunc("GET /api/v1/orders/o1", func(w http.ResponseWriter, r *http.Request) {
@@ -180,5 +180,17 @@ func TestFinanceShipmentsNombreYGuia(t *testing.T) {
 	got := financeShipments(list, p)
 	if len(got) != 1 || got[0].Customer != "Ana Pérez" || got[0].Tracking != "240001" {
 		t.Fatalf("envío inesperado: %+v", got)
+	}
+}
+
+func TestEnviosSinGuiaQuedanFuera(t *testing.T) {
+	p, _ := NewPeriod("2026-11-13", "2026-11-13")
+	list := ShipmentList{Data: []json.RawMessage{
+		json.RawMessage(`{"attributes":{"created_at":"2026-11-13T15:00:00Z","master_tracking_number":"240065822548","on_delivery_status":"pending","total":"16532"}}`),
+		json.RawMessage(`{"attributes":{"created_at":"2026-11-13T14:50:00Z","master_tracking_number":null,"total":"16532"}}`), // el intento que falló
+	}}
+	got := withLabel(financeShipments(list, p))
+	if len(got) != 1 || got[0].Tracking != "240065822548" {
+		t.Fatalf("envíos con guía: %+v", got)
 	}
 }
