@@ -231,9 +231,6 @@ func (b *Bot) confirmarGuia(ctx context.Context, callbackID string, chatID, msgI
 // maxDiasImprimir es el máximo de días hacia atrás que acepta /imprimir.
 const maxDiasImprimir = 15
 
-const ayudaImprimir = "🖨️ /imprimir arma las guías de hoy en hojas carta de 4.\n" +
-	"/imprimir 3 incluye las de los últimos 3 días (hasta 15), por ejemplo después de un festivo."
-
 // diasAImprimir lee el número de días de "/imprimir 3" (o "/imprimir@bot 3"). Sin número es 1 (hoy).
 func diasAImprimir(text string) int {
 	fields := strings.Fields(text)

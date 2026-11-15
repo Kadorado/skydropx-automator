@@ -43,6 +43,13 @@ type State struct {
 	// Estado de cobro ya avisado por envío (collected | failed), para no repetir el aviso.
 	Cobros map[string]string `json:"cobros,omitempty"`
 
+	// Avisos de problemas de entrega ya enviados (envío:estado:día -> día), para no repetirlos.
+	Avisos map[string]string `json:"avisos,omitempty"`
+
+	// Último día (AAAA-MM-DD) en que se mandó cada resumen automático.
+	UltimoResumenDiario  string `json:"ultimo_resumen_diario,omitempty"`
+	UltimoResumenSemanal string `json:"ultimo_resumen_semanal,omitempty"`
+
 	mu   sync.Mutex
 	path string
 }
@@ -194,6 +201,46 @@ func (s *State) marcarCobro(id, status string) (bool, error) {
 		s.Cobros = map[string]string{}
 	}
 	s.Cobros[id] = status
+	s.mu.Unlock()
+	return true, s.save()
+}
+
+// marcarAviso registra un aviso del día (AAAA-MM-DD). Devuelve false si ya se había enviado.
+// Los avisos de más de 30 días se olvidan para que el archivo no crezca sin fin.
+func (s *State) marcarAviso(key, day string) (bool, error) {
+	s.mu.Lock()
+	if _, ok := s.Avisos[key]; ok {
+		s.mu.Unlock()
+		return false, nil
+	}
+	if s.Avisos == nil {
+		s.Avisos = map[string]string{}
+	}
+	if t, err := time.Parse("2006-01-02", day); err == nil {
+		limite := t.AddDate(0, 0, -30).Format("2006-01-02")
+		for k, d := range s.Avisos {
+			if d < limite {
+				delete(s.Avisos, k)
+			}
+		}
+	}
+	s.Avisos[key] = day
+	s.mu.Unlock()
+	return true, s.save()
+}
+
+// resumenPendiente dice si el resumen (diario o semanal) de day todavía no se mandó, y lo marca como enviado.
+func (s *State) resumenPendiente(semanal bool, day string) (bool, error) {
+	s.mu.Lock()
+	ultimo := &s.UltimoResumenDiario
+	if semanal {
+		ultimo = &s.UltimoResumenSemanal
+	}
+	if *ultimo == day {
+		s.mu.Unlock()
+		return false, nil
+	}
+	*ultimo = day
 	s.mu.Unlock()
 	return true, s.save()
 }

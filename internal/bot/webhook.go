@@ -50,6 +50,9 @@ func (b *Bot) WebhookHandler(secret, header string) http.HandlerFunc {
 			go b.avisoEntrega(shipmentID, ev.Data.Attributes.Tracking, "collected")
 		case "in_return":
 			go b.avisoEntrega(shipmentID, ev.Data.Attributes.Tracking, "failed")
+		case "delivery_attempt", "exception", "delivered_to_branch":
+			go b.avisoIncidencia(shipmentID, ev.Data.Attributes.Status, ev.Data.Attributes.Tracking,
+				ev.Data.Attributes.EventDescription, ev.Data.Attributes.TrackingURL)
 		}
 		if orderID == "" {
 			return
@@ -63,8 +66,10 @@ type webhookEvent struct {
 	Data struct {
 		Type       string `json:"type"`
 		Attributes struct {
-			Status   string `json:"status"`
-			Tracking string `json:"tracking_number"`
+			Status           string `json:"status"`
+			Tracking         string `json:"tracking_number"`
+			TrackingURL      string `json:"tracking_url_provider"`
+			EventDescription string `json:"event_description"`
 		} `json:"attributes"`
 		Relationships struct {
 			Shipment struct {

@@ -16,19 +16,21 @@ import (
 
 	"skydropx-automator/internal/domain"
 	"skydropx-automator/internal/parser"
+	"skydropx-automator/internal/settings"
 	"skydropx-automator/internal/skydropx"
 	"skydropx-automator/internal/telegram"
 )
 
 type Options struct {
 	Token          string
-	APIBase        string        // vacío = API oficial de Telegram
-	AllowedChatIDs []int64       // chats autorizados (tú y tu vendedor)
-	AdminChatIDs   []int64       // grupo donde se publica cada guía lista
-	GestionChatIDs []int64       // grupo privado que recibe las órdenes nuevas con el botón de generar guía y usa /imprimir
-	DefaultValor   float64       // valor unitario si el mensaje no trae "Valor:"
-	StatePath      string        // archivo JSON con offset y órdenes pendientes
-	CheckEvery     time.Duration // cada cuánto revisar si hay guías nuevas
+	APIBase        string          // vacío = API oficial de Telegram
+	AllowedChatIDs []int64         // chats autorizados (tú y tu vendedor)
+	AdminChatIDs   []int64         // grupo donde se publica cada guía lista
+	GestionChatIDs []int64         // grupo privado que recibe las órdenes nuevas con el botón de generar guía y usa /imprimir
+	DefaultValor   float64         // valor unitario si el mensaje no trae "Valor:"
+	StatePath      string          // archivo JSON con offset y órdenes pendientes
+	CheckEvery     time.Duration   // cada cuánto revisar si hay guías nuevas
+	Settings       *settings.Store // comisión del vendedor (se cambia con /comision)
 }
 
 type Bot struct {
@@ -52,6 +54,7 @@ func New(opts Options, sky *skydropx.Client) (*Bot, error) {
 // Run atiende mensajes y revisa guías hasta que ctx termine.
 func (b *Bot) Run(ctx context.Context) {
 	go b.watchGuias(ctx)
+	go b.watchResumenes(ctx)
 
 	for ctx.Err() == nil {
 		updates, err := b.tg.GetUpdates(ctx, b.st.Offset)
@@ -84,8 +87,16 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			b.imprimir(ctx, chatID, diasAImprimir(text))
 			return
 		}
+		if strings.HasPrefix(text, "/comision") {
+			b.comandoComision(ctx, chatID, text)
+			return
+		}
+		if strings.HasPrefix(text, "/resumen") {
+			b.comandoResumen(ctx, chatID, text)
+			return
+		}
 		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-			b.say(ctx, chatID, "Aquí llegan las órdenes nuevas con el botón 🚚 para generar la guía con Interrapidísimo.\n\n"+ayudaImprimir)
+			b.say(ctx, chatID, ayudaGestion)
 			return
 		}
 		if !b.isAllowed(chatID) {
@@ -97,8 +108,13 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 		b.say(ctx, chatID, fmt.Sprintf("No estás autorizado para usar este bot. Tu ID de chat es <code>%d</code>. Pásaselo al administrador para que te dé acceso.", chatID))
 		return
 	}
+	// La comisión y los resúmenes solo se manejan desde el grupo de gestión.
+	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") {
+		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
+		return
+	}
 	if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-		b.say(ctx, chatID, "Envíame los datos del cliente con el formato de siempre. Creo la orden y, cuando la guía esté lista, la mando "+b.guiaDestino()+".")
+		b.say(ctx, chatID, ayudaVendedor)
 		return
 	}
 	b.createOrder(ctx, chatID, sender, text)

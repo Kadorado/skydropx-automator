@@ -129,7 +129,13 @@ type Finance struct {
 }
 
 // Finance arma el resumen de dinero del periodo: saldo, contra entrega, gastos, movimientos y comisión.
-func (c *Client) Finance(ctx context.Context, p Period, perUnit float64) (Finance, error) {
+// CommissionRate da la comisión por datáfono vigente en una fecha: si cambia, cada venta usa la de su día.
+type CommissionRate func(t time.Time) float64
+
+// FlatCommission es una comisión que no cambia con la fecha.
+func FlatCommission(v float64) CommissionRate { return func(time.Time) float64 { return v } }
+
+func (c *Client) Finance(ctx context.Context, p Period, rate CommissionRate) (Finance, error) {
 	if c.isMock() {
 		return Finance{}, ErrMockMode
 	}
@@ -151,7 +157,7 @@ func (c *Client) Finance(ctx context.Context, p Period, perUnit float64) (Financ
 		shipments[i].Product = products[shipments[i].OrderID]
 	}
 
-	f := summarizeShipments(shipments, qty, perUnit)
+	f := summarizeShipments(shipments, qty, rate)
 	f.Truncated = list.Truncated
 
 	if cr, err := c.Credits(ctx); err == nil {
@@ -308,6 +314,8 @@ type financeShipment struct {
 	Date       string
 	Tracking   string
 	Customer   string
+	Phone      string
+	City       string
 	OrderID    string
 	Cancelled  bool
 	NoLabel    bool    // no tiene número de guía: falló o no se generó, no se pagó
@@ -319,17 +327,20 @@ type financeShipment struct {
 
 // financeShipments toma los envíos creados dentro del periodo.
 func financeShipments(list ShipmentList, p Period) []financeShipment {
-	names := map[string]string{} // id de la dirección -> nombre del destinatario
+	type contact struct{ name, phone, city string }
+	contacts := map[string]contact{} // id de la dirección -> datos del destinatario
 	for _, raw := range list.Included {
 		var inc struct {
 			ID         string `json:"id"`
 			Type       string `json:"type"`
 			Attributes struct {
-				Name string `json:"name"`
+				Name  string `json:"name"`
+				Phone string `json:"phone"`
+				City  string `json:"area_level2"`
 			} `json:"attributes"`
 		}
 		if json.Unmarshal(raw, &inc) == nil && inc.Type == "address" {
-			names[inc.ID] = inc.Attributes.Name
+			contacts[inc.ID] = contact{inc.Attributes.Name, inc.Attributes.Phone, inc.Attributes.City}
 		}
 	}
 	var out []financeShipment
@@ -360,15 +371,17 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 		if !ok || !p.contains(created.In(colombia)) {
 			continue
 		}
-		var customer string
-		if to := s.Relationships.AddressTo.Data; to != nil {
-			customer = names[to.ID]
+		var to contact
+		if ref := s.Relationships.AddressTo.Data; ref != nil {
+			to = contacts[ref.ID]
 		}
 		out = append(out, financeShipment{
 			ID:         s.ID,
 			Date:       s.Attributes.CreatedAt,
 			Tracking:   s.Attributes.Tracking,
-			Customer:   customer,
+			Customer:   to.name,
+			Phone:      to.phone,
+			City:       to.city,
 			OrderID:    s.Attributes.OrderID,
 			Cancelled:  s.Attributes.WorkflowStatus == "cancelled",
 			NoLabel:    strings.TrimSpace(s.Attributes.Tracking) == "",
@@ -382,8 +395,10 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 
 // summarizeShipments suma el contra entrega, el costo de las guías y la comisión del vendedor.
 // qty trae los datáfonos de cada orden; los envíos sin dato cuentan como 1 y se marcan como estimados.
-func summarizeShipments(shipments []financeShipment, qty map[string]int, perUnit float64) Finance {
-	f := Finance{Spending: map[string]Money{}, Commission: Commission{PerUnit: perUnit}}
+// Cada envío usa la comisión vigente el día en que se creó.
+func summarizeShipments(shipments []financeShipment, qty map[string]int, rate CommissionRate) Finance {
+	now := time.Now()
+	f := Finance{Spending: map[string]Money{}, Commission: Commission{PerUnit: rate(now)}}
 	for _, s := range shipments {
 		f.Shipments++
 		if s.Cancelled {
@@ -397,11 +412,17 @@ func summarizeShipments(shipments []financeShipment, qty map[string]int, perUnit
 		if !known || units < 1 {
 			units = 1
 		}
+		created, ok := parseTime(s.Date)
+		if !ok {
+			created = now
+		}
+		perUnit := rate(created)
 		switch s.OnDelivery {
 		case "collected":
 			f.Collected.Count++
 			f.Collected.Amount += s.customerPays()
 			f.Commission.PaidUnits += units
+			f.Commission.PaidAmount += float64(units) * perUnit
 			if !known {
 				f.Commission.Estimated++
 			}
@@ -409,6 +430,7 @@ func summarizeShipments(shipments []financeShipment, qty map[string]int, perUnit
 			f.Pending.Count++
 			f.Pending.Amount += s.customerPays()
 			f.Commission.PendingUnits += units
+			f.Commission.PendingAmount += float64(units) * perUnit
 			if !known {
 				f.Commission.Estimated++
 			}
@@ -417,8 +439,6 @@ func summarizeShipments(shipments []financeShipment, qty map[string]int, perUnit
 			f.Failed.Amount += s.customerPays()
 		}
 	}
-	f.Commission.PaidAmount = float64(f.Commission.PaidUnits) * perUnit
-	f.Commission.PendingAmount = float64(f.Commission.PendingUnits) * perUnit
 	return f
 }
 

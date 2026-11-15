@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"skydropx-automator/internal/config"
 )
@@ -21,7 +22,7 @@ func TestSummarizeShipmentsComision(t *testing.T) {
 		{OrderID: "o6", OnDelivery: "collected", CODAmount: 99999, Cost: 9999, Cancelled: true},
 	}
 	qty := map[string]int{"o1": 2, "o2": 1, "o3": 3, "o5": 1}
-	f := summarizeShipments(shipments, qty, 15000)
+	f := summarizeShipments(shipments, qty, FlatCommission(15000))
 
 	c := f.Commission
 	if c.PaidUnits != 3 || c.PaidAmount != 45000 {
@@ -116,7 +117,7 @@ func TestFinanceCompleto(t *testing.T) {
 	c := NewClient(config.Config{SkydropxMode: "live", SkydropxBaseURL: srv.URL, SkydropxClientID: "id", SkydropxClientSecret: "s"})
 
 	p, _ := NewPeriod("2026-11-01", "2026-11-30")
-	f, err := c.Finance(context.Background(), p, 15000)
+	f, err := c.Finance(context.Background(), p, FlatCommission(15000))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,5 +210,24 @@ func TestCustomerPaysConYSinEnvioIncluido(t *testing.T) {
 	// Sin el producto de la orden se confía en lo reportado.
 	if got := (financeShipment{CODAmount: 72573, Cost: 12266}).customerPays(); got != 72573 {
 		t.Fatalf("sin producto: %v", got)
+	}
+}
+
+func TestComisionSegunFechaDelEnvio(t *testing.T) {
+	cambio, _ := time.ParseInLocation("2006-01-02", "2026-11-15", colombia)
+	rate := func(t time.Time) float64 {
+		if t.Before(cambio) {
+			return 15000
+		}
+		return 12000
+	}
+	shipments := []financeShipment{
+		{Date: "2026-11-14T20:00:00Z", Tracking: "G1", OrderID: "o1", OnDelivery: "collected"}, // 2 datáfonos a 15.000
+		{Date: "2026-11-16T15:00:00Z", Tracking: "G2", OrderID: "o2", OnDelivery: "collected"}, // 1 datáfono a 12.000
+		{Date: "2026-11-16T16:00:00Z", Tracking: "G3", OrderID: "o3", OnDelivery: "pending"},   // 1 datáfono a 12.000
+	}
+	f := summarizeShipments(shipments, map[string]int{"o1": 2, "o2": 1, "o3": 1}, rate)
+	if f.Commission.PaidAmount != 42000 || f.Commission.PendingAmount != 12000 {
+		t.Fatalf("comisión %+v, se esperaba 42000 cobrados y 12000 por cobrar", f.Commission)
 	}
 }

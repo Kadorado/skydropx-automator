@@ -11,6 +11,7 @@ import (
 	"skydropx-automator/internal/config"
 	"skydropx-automator/internal/domain"
 	"skydropx-automator/internal/parser"
+	"skydropx-automator/internal/settings"
 	"skydropx-automator/internal/skydropx"
 )
 
@@ -22,16 +23,18 @@ type idempotencyEntry struct {
 type APIHandler struct {
 	cfg            config.Config
 	skydropxClient *skydropx.Client
+	settings       *settings.Store
 
 	mu          sync.Mutex
 	idempotency map[string]idempotencyEntry
 	shipments   map[string]domain.ShipmentResult
 }
 
-func NewAPIHandler(cfg config.Config, client *skydropx.Client) *APIHandler {
+func NewAPIHandler(cfg config.Config, client *skydropx.Client, st *settings.Store) *APIHandler {
 	return &APIHandler{
 		cfg:            cfg,
 		skydropxClient: client,
+		settings:       st,
 		idempotency:    make(map[string]idempotencyEntry),
 		shipments:      make(map[string]domain.ShipmentResult),
 	}

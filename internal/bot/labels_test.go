@@ -16,6 +16,7 @@ import (
 
 	"skydropx-automator/internal/config"
 	"skydropx-automator/internal/domain"
+	"skydropx-automator/internal/settings"
 	"skydropx-automator/internal/skydropx"
 	"skydropx-automator/internal/telegram"
 )
@@ -351,5 +352,69 @@ func TestSaldoInsuficiente(t *testing.T) {
 	}
 	if p, _ := b.st.getPending("orden-4"); p.LabelRequested {
 		t.Fatal("si Skydropx rechaza, la orden debe poder reintentarse")
+	}
+}
+
+func TestAvisosYComisionSoloEnGrupoDeGestion(t *testing.T) {
+	f := &fakeAPIs{saldo: 100000}
+	var mu sync.Mutex
+	recibidos := map[int64][]string{} // chat -> textos
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /botTOKEN/sendMessage", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ChatID int64  `json:"chat_id"`
+			Text   string `json:"text"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		recibidos[body.ChatID] = append(recibidos[body.ChatID], body.Text)
+		mu.Unlock()
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
+	})
+	mux.Handle("/", f.handler())
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	f.srvURL = srv.URL
+
+	ajustes, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"), 15000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sky := skydropx.NewClient(config.Config{
+		SkydropxMode: "live", SkydropxBaseURL: srv.URL, SkydropxClientID: "id", SkydropxClientSecret: "secret",
+	})
+	b, err := New(Options{
+		Token: "TOKEN", APIBase: srv.URL, AllowedChatIDs: []int64{-100}, AdminChatIDs: []int64{-100}, GestionChatIDs: []int64{-200},
+		StatePath: filepath.Join(t.TempDir(), "state.json"), CheckEvery: time.Hour, Settings: ajustes,
+	}, sky)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// El vendedor no puede cambiar la comisión.
+	b.handle(ctx, -100, "Vendedor", "/comision 30000")
+	if got := ajustes.CurrentCommission(); got != 15000 {
+		t.Fatalf("el vendedor cambió la comisión a %v", got)
+	}
+	// Desde tu grupo sí.
+	b.handle(ctx, -200, "Tú", "/comision 12000")
+	if got := ajustes.CurrentCommission(); got != 12000 {
+		t.Fatalf("la comisión debía quedar en 12000, quedó en %v", got)
+	}
+
+	// El pago y el problema de entrega llegan solo a tu grupo.
+	mu.Lock()
+	recibidos = map[int64][]string{}
+	mu.Unlock()
+	b.avisoEntrega("s1", "G1", "collected")
+	b.avisoIncidencia("s2", "delivery_attempt", "G2", "Destinatario ausente", "")
+	mu.Lock()
+	defer mu.Unlock()
+	if len(recibidos[-100]) != 0 {
+		t.Fatalf("el grupo del vendedor no debe recibir estos avisos: %q", recibidos[-100])
+	}
+	if len(recibidos[-200]) != 2 || !strings.Contains(recibidos[-200][0], "Pagaron") || !strings.Contains(recibidos[-200][1], "No pudieron entregar") {
+		t.Fatalf("tu grupo debía recibir el pago y el problema de entrega: %q", recibidos[-200])
 	}
 }

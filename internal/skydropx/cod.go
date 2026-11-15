@@ -10,6 +10,8 @@ type CODShipment struct {
 	ID       string
 	Tracking string
 	Customer string
+	Phone    string
+	City     string
 	OrderID  string
 	Status   string  // pending | collected | failed | cancelled | vacío
 	Reported float64 // monto de contra entrega que reporta Skydropx (a veces con el envío, a veces sin él)
@@ -33,7 +35,7 @@ func (c *Client) CODShipments(ctx context.Context) ([]CODShipment, error) {
 			status = "cancelled"
 		}
 		out = append(out, CODShipment{
-			ID: s.ID, Tracking: s.Tracking, Customer: s.Customer, OrderID: s.OrderID,
+			ID: s.ID, Tracking: s.Tracking, Customer: s.Customer, Phone: s.Phone, City: s.City, OrderID: s.OrderID,
 			Status: status, Reported: s.CODAmount, Cost: s.Cost,
 		})
 	}

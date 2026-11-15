@@ -5,19 +5,26 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"skydropx-automator/internal/auth"
 	"skydropx-automator/internal/bot"
 	"skydropx-automator/internal/config"
 	"skydropx-automator/internal/handlers"
+	"skydropx-automator/internal/settings"
 	"skydropx-automator/internal/skydropx"
 )
 
 func main() {
 	cfg := config.Load()
 	client := skydropx.NewClient(cfg)
-	apiHandler := handlers.NewAPIHandler(cfg, client)
+	// Los ajustes (comisión del vendedor) se guardan junto al estado del bot, en el disco persistente.
+	ajustes, err := settings.Load(filepath.Join(filepath.Dir(cfg.BotStatePath), "settings.json"), cfg.ComisionPorDatafono)
+	if err != nil {
+		log.Fatalf("No se pudieron leer los ajustes: %v", err)
+	}
+	apiHandler := handlers.NewAPIHandler(cfg, client, ajustes)
 
 	mux := http.NewServeMux()
 	apiHandler.RegisterRoutes(mux)
@@ -37,6 +44,7 @@ func main() {
 			DefaultValor:   cfg.DefaultValorUnitario,
 			StatePath:      cfg.BotStatePath,
 			CheckEvery:     time.Duration(cfg.GuiaCheckMinutes) * time.Minute,
+			Settings:       ajustes,
 		}, client)
 		if err != nil {
 			log.Fatalf("Bot de Telegram: %v", err)
@@ -47,6 +55,7 @@ func main() {
 		if cfg.SkydropxWebhookSecret != "" {
 			mux.HandleFunc("POST "+auth.WebhookPath, tgBot.WebhookHandler(cfg.SkydropxWebhookSecret, cfg.SkydropxWebhookHeader))
 			log.Printf("Webhook de Skydropx activo en %s", auth.WebhookPath)
+		} else {
 			log.Println("Webhook de Skydropx desactivado: SKYDROPX_WEBHOOK_SECRET no está configurado (se revisan guías cada GUIA_CHECK_MINUTES).")
 		}
 	} else {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -19,6 +20,35 @@ func (h *APIHandler) RegisterShipmentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/skydropx/status", h.handleStatuses)
 	mux.HandleFunc("GET /api/skydropx/order-quantities", h.handleOrderQuantities)
 	mux.HandleFunc("GET /api/finanzas", h.handleFinanzas)
+	mux.HandleFunc("GET /api/ajustes", h.handleAjustes)
+	mux.HandleFunc("POST /api/ajustes/comision", h.handleSetComision)
+}
+
+// handleAjustes devuelve la comisión vigente del vendedor y sus cambios.
+func (h *APIHandler) handleAjustes(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"comision":  h.settings.CurrentCommission(),
+		"historial": h.settings.CommissionHistory(),
+	})
+}
+
+// handleSetComision cambia la comisión por datáfono desde una fecha ({"valor":12000,"desde":"AAAA-MM-DD"};
+// sin desde, desde hoy). Las ventas anteriores conservan su valor.
+func (h *APIHandler) handleSetComision(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Valor float64 `json:"valor"`
+		Desde string  `json:"desde"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "datos inválidos")
+		return
+	}
+	rate, err := h.settings.SetCommission(req.Valor, req.Desde)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rate)
 }
 
 // handleFinanzas devuelve el resumen de dinero entre ?desde= y ?hasta= (AAAA-MM-DD, hora de Colombia).
@@ -29,7 +59,7 @@ func (h *APIHandler) handleFinanzas(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	f, err := h.skydropxClient.Finance(r.Context(), period, h.cfg.ComisionPorDatafono)
+	f, err := h.skydropxClient.Finance(r.Context(), period, h.settings.CommissionAt)
 	if err != nil {
 		writeSkydropxError(w, err)
 		return

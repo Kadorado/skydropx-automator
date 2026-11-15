@@ -428,7 +428,7 @@
           <div class="flex items-start justify-between gap-3">
             <div>
               <p class="kpi-label">Comisión del vendedor</p>
-              <p class="mt-1 text-sm text-slate-500"><span id="fin-com-unit">$15.000</span> por datáfono</p>
+              <p class="mt-1 text-sm text-slate-500"><span id="fin-com-unit">$15.000</span> por datáfono · <button type="button" id="fin-com-editar" class="font-semibold text-indigo-600 hover:text-indigo-800">Cambiar</button></p>
             </div>
             <span class="badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">Al corte</span>
           </div>
@@ -449,6 +449,20 @@
               <p id="fin-com-total-sub" class="text-xs text-slate-400"></p>
             </div>
           </div>
+          <form id="fin-com-form" class="mt-4 hidden rounded-xl bg-slate-50 p-3">
+            <div class="flex flex-wrap items-end gap-2">
+              <label class="text-xs font-medium text-slate-500">Nuevo valor por datáfono
+                <input type="number" id="fin-com-valor" min="0" step="500" required class="field-input mt-1 !w-36 !py-2 text-sm" />
+              </label>
+              <label class="text-xs font-medium text-slate-500">Desde
+                <input type="date" id="fin-com-desde" required class="field-input mt-1 !w-auto !py-2 text-xs" />
+              </label>
+              <button type="submit" class="btn-primary !py-2 text-xs">Guardar</button>
+              <button type="button" id="fin-com-cancelar" class="btn-ghost !py-2 text-xs">Cancelar</button>
+            </div>
+            <p class="mt-2 text-[11px] text-slate-500">Las ventas anteriores a esa fecha conservan lo que se pagaba entonces.</p>
+            <p id="fin-com-historial" class="mt-1 text-[11px] text-slate-400"></p>
+          </form>
           <p id="fin-com-nota" class="mt-4 hidden rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800"></p>
         </div>
       </div>
@@ -602,6 +616,6 @@
 
   <script src="app.js?v=9"></script>
   <script src="mis-envios.js?v=23"></script>
-  <script src="finanzas.js?v=10"></script>
+  <script src="finanzas.js?v=11"></script>
 </body>
 </html>

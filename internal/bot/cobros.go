@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"strings"
 	"time"
 
 	"skydropx-automator/internal/skydropx"
@@ -75,4 +76,73 @@ func cobroMensaje(e skydropx.CODShipment, pays, product float64) string {
 	return fmt.Sprintf("💵 <b>¡Pagaron!</b>\n\n👤 <b>Cliente:</b> %s\n📦 <b>Guía:</b> %s\n"+
 		"💰 <b>Pagó:</b> %s (%s)\n\nEl paquete se entregó y lo cobrado llega a tu saldo disponible de Skydropx.",
 		cliente, html.EscapeString(e.Tracking), formatCOP(pays), detalle)
+}
+
+// avisoIncidencia avisa en el grupo de gestión un problema de entrega (intento fallido, novedad de la
+// transportadora o paquete en oficina) para llamar al cliente antes de que el envío se devuelva.
+// Cada problema se avisa una vez por día.
+func (b *Bot) avisoIncidencia(shipmentID, status, tracking, detalle, trackingURL string) {
+	if shipmentID == "" {
+		return
+	}
+	day := time.Now().In(colombiaTZ).Format("2006-01-02")
+	nuevo, err := b.st.marcarAviso(shipmentID+":"+status+":"+day, day)
+	if err != nil {
+		log.Printf("bot: no se pudo guardar el aviso de entrega: %v", err)
+	}
+	if !nuevo {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	e := skydropx.CODShipment{ID: shipmentID, Tracking: tracking}
+	envios, err := b.sky.CODShipments(ctx)
+	if errors.Is(err, skydropx.ErrMockMode) {
+		return
+	}
+	for _, x := range envios {
+		if x.ID == shipmentID {
+			e = x
+			break
+		}
+	}
+	if e.Tracking == "" {
+		e.Tracking = tracking
+	}
+	msg := incidenciaMensaje(e, status, detalle, trackingURL)
+	for _, id := range b.gestionChats() {
+		b.say(ctx, id, msg)
+	}
+}
+
+// incidenciaMensaje arma el aviso de un problema de entrega con lo que hay que hacer.
+func incidenciaMensaje(e skydropx.CODShipment, status, detalle, trackingURL string) string {
+	titulo, accion := "🚨 <b>Novedad con el envío</b>", "Revisa con el cliente o con la transportadora para que no se devuelva."
+	switch status {
+	case "delivery_attempt":
+		titulo, accion = "⚠️ <b>No pudieron entregar</b>", "Llama al cliente para que esté pendiente: la transportadora vuelve a intentar."
+	case "delivered_to_branch":
+		titulo, accion = "🏢 <b>El paquete quedó en la oficina</b>", "Avísale al cliente que lo recoja y pague ahí; si no lo recoge, se devuelve."
+	}
+	cliente := e.Customer
+	if cliente == "" {
+		cliente = "Sin nombre"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n\n👤 <b>Cliente:</b> %s\n", titulo, html.EscapeString(cliente))
+	if e.Phone != "" {
+		fmt.Fprintf(&b, "📞 <b>Teléfono:</b> %s\n", html.EscapeString(e.Phone))
+	}
+	if e.City != "" {
+		fmt.Fprintf(&b, "📍 <b>Ciudad:</b> %s\n", html.EscapeString(e.City))
+	}
+	fmt.Fprintf(&b, "📦 <b>Guía:</b> %s\n", html.EscapeString(e.Tracking))
+	if d := strings.TrimSpace(detalle); d != "" {
+		fmt.Fprintf(&b, "📝 <b>Detalle:</b> %s\n", html.EscapeString(d))
+	}
+	if trackingURL != "" {
+		fmt.Fprintf(&b, "🔎 %s\n", html.EscapeString(trackingURL))
+	}
+	fmt.Fprintf(&b, "\n%s", accion)
+	return b.String()
 }

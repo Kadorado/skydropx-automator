@@ -446,6 +446,49 @@
 
   $("fin-refresh").addEventListener("click", load);
 
+  // ---------- Comisión del vendedor ----------
+
+  async function abrirComision() {
+    const form = $("fin-com-form");
+    form.classList.remove("hidden");
+    $("fin-com-desde").value = today();
+    try {
+      const res = await fetch("/api/ajustes");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "No se pudo leer la comisión");
+      $("fin-com-valor").value = Math.round(body.comision || 0);
+      const h = body.historial || [];
+      $("fin-com-historial").textContent = h.length
+        ? "Cambios: " + h.map((r) => `${money(r.value)} desde el ${fmtDay(r.from)}`).join(" · ")
+        : "";
+    } catch (err) {
+      window.toast(err.message, "error");
+    }
+    $("fin-com-valor").focus();
+  }
+
+  $("fin-com-editar").addEventListener("click", abrirComision);
+  $("fin-com-cancelar").addEventListener("click", () => $("fin-com-form").classList.add("hidden"));
+  $("fin-com-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const valor = Number($("fin-com-valor").value);
+    const desde = $("fin-com-desde").value;
+    try {
+      const res = await fetch("/api/ajustes/comision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ valor, desde }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "No se pudo guardar la comisión");
+      window.toast(`Comisión: ${money(valor)} por datáfono desde el ${fmtDay(desde)}`, "success");
+      $("fin-com-form").classList.add("hidden");
+      load();
+    } catch (err) {
+      window.toast(err.message, "error");
+    }
+  });
+
   $("fin-desde").max = today();
   $("fin-hasta").max = today();
   $("fin-mes").max = today().slice(0, 7);
