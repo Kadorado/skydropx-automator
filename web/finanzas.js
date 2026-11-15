@@ -191,8 +191,8 @@
   // ---------- Cuenta por envío ----------
 
   const ESTADO_COBRO = {
-    collected: { label: "Cobrado", cls: "bg-teal-50 text-teal-700" },
-    pending: { label: "Por cobrar", cls: "bg-amber-50 text-amber-700" },
+    collected: { label: "Cobrado", cls: "bg-emerald-50 text-emerald-700" },
+    pending: { label: "Por cobrar", cls: "bg-slate-100 text-slate-600" },
     failed: { label: "No se cobró", cls: "bg-rose-50 text-rose-700" },
     cancelled: { label: "Cancelada", cls: "bg-slate-100 text-slate-500" },
   };
@@ -219,10 +219,10 @@
         return { entra: e.customer_pays, entraSub: "ya está en tu saldo disponible", entraCls: "text-emerald-600",
           queda: e.customer_pays - costo + credito, quedaSub: "tu producto, ya sin el envío" };
       case "pending":
-        return { entra: e.customer_pays, entraSub: "te entra cuando el cliente pague", entraCls: "text-amber-600",
+        return { entra: e.customer_pays, entraSub: "te entra cuando el cliente pague", entraCls: "text-slate-400",
           queda: e.customer_pays - costo + credito, quedaSub: "cuando se cobre" , pendiente: true };
       case "failed":
-        return { entra: 0, entraSub: "el cliente no pagó", entraCls: "text-rose-500",
+        return { entra: e.customer_pays, noCobrado: true, entraSub: "el cliente no pagó", entraCls: "text-rose-600",
           queda: credito - costo, quedaSub: "perdiste el envío" };
       case "cancelled":
         return { entra: 0, entraSub: "guía cancelada", entraCls: "text-slate-400",
@@ -266,7 +266,7 @@
     $("fin-env-resumen").innerHTML =
       box("Pagaste en envíos", `−${money(gastado)}`, plural(activos.length, "guía", "guías"), "text-slate-900") +
       box("Ya te entró", `+${money(sum("collected"))}`, `${money(prodCobrado)} producto + ${money(envioDevuelto)} envíos`, "text-emerald-600") +
-      box("Por entrar", `+${money(sum("pending"))}`, "cuando paguen", "text-amber-600") +
+      box("Por entrar", `+${money(sum("pending"))}`, "cuando paguen", "text-slate-400") +
       box("Te quedó de lo cobrado", signed(netoCobrados), "ya sin el envío", "text-slate-900");
 
     $("fin-env-count").textContent = list.length ? plural(list.length, "envío", "envíos") : "";
@@ -298,8 +298,8 @@
             </div>
             <div>
               <p class="text-[11px] text-slate-400">Te entra</p>
-              <p class="font-semibold tabular-nums ${c.entraCls}">${c.entra ? `+${money(c.entra)}` : "—"}</p>
-              ${c.entra ? (() => {
+              <p class="font-semibold tabular-nums ${c.entraCls} ${c.noCobrado ? "line-through" : ""}">${c.entra ? `${c.noCobrado ? "" : "+"}${money(c.entra)}` : "—"}</p>
+              ${c.entra && !c.noCobrado ? (() => {
                 const d = desglose(e);
                 return `<p class="text-xs text-slate-500 tabular-nums">${money(d.producto)} producto</p>
                   <p class="text-xs text-slate-500 tabular-nums">+ ${money(d.envio)} envío ${e.status === "collected" ? "devuelto" : "a devolver"}</p>`;
