@@ -33,8 +33,14 @@
       .section-title { @apply mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400; }
       .badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium; }
       .stat { @apply rounded-2xl bg-white p-3 ring-1 ring-slate-900/5 shadow-sm sm:p-5; }
-      .nav-pill { @apply inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-500 transition hover:text-slate-900; }
+      .nav-pill { @apply inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-500 transition hover:text-slate-900 sm:gap-2 sm:px-3.5 sm:text-sm; }
+      .kpi { @apply relative overflow-hidden rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5 sm:p-5; }
+      .kpi-label { @apply text-[11px] font-semibold uppercase tracking-wider text-slate-400; }
+      .kpi-value { @apply mt-2 text-xl font-bold tracking-tight text-slate-900 tabular-nums sm:text-2xl; }
+      .kpi-sub { @apply mt-1 text-xs text-slate-500; }
+      .line-item { @apply flex items-center justify-between gap-3 py-2.5 text-sm; }
       .nav-pill[aria-selected="true"] { @apply bg-slate-900 text-white shadow-md; }
+      .nav-pill:not([aria-selected="true"]) > span { @apply hidden sm:inline; }
       .chip { @apply rounded-full px-3.5 py-1.5 text-xs font-semibold ring-1 ring-slate-200 bg-white text-slate-600 transition hover:bg-slate-50; }
       .chip[aria-pressed="true"] { @apply bg-indigo-600 text-white ring-indigo-600 shadow-sm; }
       .icon-btn { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-200; }
@@ -74,7 +80,7 @@
         <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/30">
           <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3.3 7.3 8.7 4.7 8.7-4.7M12 22V12"/></svg>
         </div>
-        <div class="min-w-0">
+        <div class="hidden min-w-0 sm:block">
           <h1 class="truncate text-base font-bold text-slate-900">Skydropx</h1>
           <p id="system-badge" class="hidden truncate text-xs text-slate-500 sm:block">Cargando configuración…</p>
         </div>
@@ -88,6 +94,10 @@
         <button type="button" id="tab-envios" role="tab" aria-selected="false" class="nav-pill">
           <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="13" height="10" rx="2"/><path d="M15 10h4l3 3v4h-7"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
           <span>Envíos</span>
+        </button>
+        <button type="button" id="tab-finanzas" role="tab" aria-selected="false" class="nav-pill">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>
+          <span>Finanzas</span>
         </button>
         <a href="/logout" class="ml-1 rounded-xl px-3 py-2 text-sm font-semibold text-slate-400 transition hover:text-red-600" title="Cerrar sesión">Salir</a>
       </nav>
@@ -298,14 +308,6 @@
         </button>
       </div>
 
-      <!-- Estadísticas -->
-      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-4">
-        <div class="stat"><p class="text-[10px] font-medium uppercase leading-tight tracking-wide text-slate-400 sm:text-xs">En camino</p><p id="stat-camino" class="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl text-sky-600">–</p></div>
-        <div class="stat"><p class="text-[10px] font-medium uppercase leading-tight tracking-wide text-slate-400 sm:text-xs">Entregados</p><p id="stat-entregado" class="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl text-emerald-600">–</p></div>
-        <div class="stat"><p class="text-[10px] font-medium uppercase leading-tight tracking-wide text-slate-400 sm:text-xs">Cobrados</p><p id="stat-cobrado" class="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl text-teal-600">–</p></div>
-        <div class="stat"><p class="text-[10px] font-medium uppercase leading-tight tracking-wide text-slate-400 sm:text-xs">Por cobrar</p><p id="stat-porcobrar" class="mt-1 text-xl font-bold sm:mt-2 sm:text-3xl text-amber-600">–</p></div>
-      </div>
-
       <!-- Filtros -->
       <div class="card !p-4">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -370,6 +372,153 @@
         </div>
       </div>
     </div>
+
+    <!-- ============ VISTA: FINANZAS ============ -->
+    <div id="view-finanzas" class="hidden space-y-6">
+
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 class="text-2xl font-bold tracking-tight text-slate-900">Finanzas</h2>
+          <p id="fin-periodo" class="mt-1 text-sm text-slate-500">Este mes</p>
+        </div>
+        <button type="button" id="fin-refresh" class="btn-ghost">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v5h-5"/></svg>
+          Actualizar
+        </button>
+      </div>
+
+      <!-- Periodo -->
+      <div class="card !p-4">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" class="chip" data-fin-preset="hoy" aria-pressed="false">Hoy</button>
+            <button type="button" class="chip" data-fin-preset="mes" aria-pressed="true">Este mes</button>
+            <button type="button" class="chip" data-fin-preset="mes-anterior" aria-pressed="false">Mes anterior</button>
+            <button type="button" class="chip" data-fin-preset="todo" aria-pressed="false">Acumulado</button>
+          </div>
+          <div class="flex flex-wrap items-end gap-2">
+            <label class="text-xs font-medium text-slate-500">Mes
+              <input type="month" id="fin-mes" class="field-input mt-1 !w-auto !py-2 text-xs" />
+            </label>
+            <span class="hidden h-8 w-px bg-slate-200 sm:block"></span>
+            <label class="text-xs font-medium text-slate-500">Desde
+              <input type="date" id="fin-desde" class="field-input mt-1 !w-auto !py-2 text-xs" />
+            </label>
+            <label class="text-xs font-medium text-slate-500">Hasta
+              <input type="date" id="fin-hasta" class="field-input mt-1 !w-auto !py-2 text-xs" />
+            </label>
+            <button type="button" id="fin-aplicar" class="btn-primary !py-2 text-xs">Ver</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="fin-avisos" class="hidden space-y-2"></div>
+
+      <!-- Saldo + comisión -->
+      <div class="grid gap-4 lg:grid-cols-5">
+        <div class="relative min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-violet-900 p-6 text-white shadow-lg lg:col-span-2">
+          <div class="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/5"></div>
+          <div class="absolute -bottom-16 -right-4 h-48 w-48 rounded-full bg-violet-500/10"></div>
+          <p class="relative text-xs font-semibold uppercase tracking-wider text-indigo-200">Saldo en Skydropx</p>
+          <p id="fin-saldo" class="relative mt-3 text-4xl font-extrabold tracking-tight tabular-nums">–</p>
+          <p id="fin-saldo-sub" class="relative mt-2 text-sm text-indigo-200">Disponible para generar guías</p>
+        </div>
+
+        <div class="card min-w-0 !p-6 lg:col-span-3">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="kpi-label">Comisión del vendedor</p>
+              <p class="mt-1 text-sm text-slate-500"><span id="fin-com-unit">$15.000</span> por datáfono</p>
+            </div>
+            <span class="badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">Al corte</span>
+          </div>
+          <div class="mt-4 grid gap-4 sm:grid-cols-3">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Le debes (cobrados)</p>
+              <p id="fin-com-pagar" class="mt-1 text-2xl font-bold tracking-tight text-emerald-600 tabular-nums">–</p>
+              <p id="fin-com-pagar-sub" class="text-xs text-slate-400"></p>
+            </div>
+            <div>
+              <p class="text-xs font-medium text-slate-500">Pendiente (por cobrar)</p>
+              <p id="fin-com-pend" class="mt-1 text-2xl font-bold tracking-tight text-amber-600 tabular-nums">–</p>
+              <p id="fin-com-pend-sub" class="text-xs text-slate-400"></p>
+            </div>
+            <div>
+              <p class="text-xs font-medium text-slate-500">Total del periodo</p>
+              <p id="fin-com-total" class="mt-1 text-2xl font-bold tracking-tight text-slate-900 tabular-nums">–</p>
+              <p id="fin-com-total-sub" class="text-xs text-slate-400"></p>
+            </div>
+          </div>
+          <p id="fin-com-nota" class="mt-4 hidden rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800"></p>
+        </div>
+      </div>
+
+      <!-- Contra entrega -->
+      <div>
+        <p class="section-title">Contra entrega</p>
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div class="kpi">
+            <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-teal-400 to-emerald-500"></div>
+            <p class="kpi-label">Cobrado</p>
+            <p id="fin-cobrado" class="kpi-value text-teal-700">–</p>
+            <p id="fin-cobrado-sub" class="kpi-sub"></p>
+          </div>
+          <div class="kpi">
+            <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-400 to-orange-400"></div>
+            <p class="kpi-label">Por cobrar</p>
+            <p id="fin-porcobrar" class="kpi-value text-amber-600">–</p>
+            <p id="fin-porcobrar-sub" class="kpi-sub"></p>
+          </div>
+          <div class="kpi">
+            <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-rose-400 to-red-500"></div>
+            <p class="kpi-label">No recaudado</p>
+            <p id="fin-fallido" class="kpi-value text-rose-600">–</p>
+            <p id="fin-fallido-sub" class="kpi-sub"></p>
+          </div>
+          <div class="kpi">
+            <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-400 to-violet-500"></div>
+            <p class="kpi-label">Envíos</p>
+            <p id="fin-envios" class="kpi-value">–</p>
+            <p id="fin-envios-sub" class="kpi-sub"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gastos + movimientos -->
+      <div class="grid gap-4 lg:grid-cols-5">
+        <div class="card min-w-0 lg:col-span-2">
+          <p class="section-title !mb-1">Gastos y movimientos del periodo</p>
+          <div id="fin-gastos" class="divide-y divide-slate-100"></div>
+        </div>
+        <div class="card min-w-0 !p-0 lg:col-span-3">
+          <div class="flex items-center justify-between px-5 pt-5 sm:px-7">
+            <p class="section-title !mb-0">Movimientos de la cuenta</p>
+            <p id="fin-mov-count" class="text-xs text-slate-400"></p>
+          </div>
+          <div class="mt-3 max-h-[28rem] overflow-y-auto">
+            <table class="min-w-full text-sm">
+              <thead class="sticky top-0 bg-slate-50/95 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 backdrop-blur">
+                <tr><th class="hidden px-5 py-2.5 sm:table-cell sm:px-7">Fecha</th><th class="px-5 py-2.5 sm:px-3">Concepto</th><th class="px-5 py-2.5 text-right sm:px-7">Monto</th></tr>
+              </thead>
+              <tbody id="fin-movimientos" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cargos extra -->
+      <div id="fin-extras-box" class="card hidden !p-0">
+        <div class="px-5 pt-5 sm:px-7"><p class="section-title !mb-0">Cargos extra</p></div>
+        <div class="mt-3 overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50/80 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <tr><th class="px-5 py-2.5 sm:px-7">Fecha</th><th class="px-3 py-2.5">Guía</th><th class="px-3 py-2.5">Tipo</th><th class="px-5 py-2.5 text-right sm:px-7">Monto</th></tr>
+          </thead>
+          <tbody id="fin-extras" class="divide-y divide-slate-100"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- Panel lateral: detalle y mensaje para el vendedor -->
@@ -431,6 +580,7 @@
   <div id="toast-root" class="pointer-events-none fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2"></div>
 
   <script src="app.js?v=9"></script>
-  <script src="mis-envios.js?v=21"></script>
+  <script src="mis-envios.js?v=22"></script>
+  <script src="finanzas.js?v=1"></script>
 </body>
 </html>

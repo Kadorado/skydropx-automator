@@ -258,14 +258,6 @@
     if (state.page > pages) state.page = pages;
     const pageItems = all.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
 
-    // Estadísticas
-    const count = (test) => state.items.filter((s) => test(statusOf(s) || {})).length;
-    const placeholder = (n) => (state.statusLoaded ? n : "…");
-    $("stat-camino").textContent = placeholder(count((x) => x.key === "en_camino"));
-    $("stat-entregado").textContent = placeholder(count((x) => x.key === "entregado"));
-    $("stat-cobrado").textContent = placeholder(count((x) => x.cobro === "cobrado"));
-    $("stat-porcobrar").textContent = placeholder(count((x) => x.cobro === "por_cobrar"));
-
     const scope =
       state.filter === "today" ? "de hoy" :
       state.filter === "yesterday" ? "de ayer" :
@@ -545,12 +537,13 @@
   // ---------- Vistas ----------
 
   function showView(name) {
-    const crear = name === "crear";
-    $("view-crear").classList.toggle("hidden", !crear);
-    $("view-envios").classList.toggle("hidden", crear);
-    $("tab-crear").setAttribute("aria-selected", String(crear));
-    $("tab-envios").setAttribute("aria-selected", String(!crear));
-    if (!crear && !state.loaded) loadShipments();
+    ["crear", "envios", "finanzas"].forEach((v) => {
+      $(`view-${v}`).classList.toggle("hidden", v !== name);
+      $(`tab-${v}`).setAttribute("aria-selected", String(v === name));
+    });
+    if (name === "envios" && !state.loaded) loadShipments();
+    if (name === "finanzas" && window.finanzas) window.finanzas.show();
+    history.replaceState(null, "", name === "crear" ? location.pathname : `#${name}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -558,6 +551,7 @@
 
   $("tab-crear").addEventListener("click", () => showView("crear"));
   $("tab-envios").addEventListener("click", () => showView("envios"));
+  $("tab-finanzas").addEventListener("click", () => showView("finanzas"));
 
   $("btn-refresh-orders").addEventListener("click", loadShipments);
 
@@ -643,7 +637,9 @@
   $("filter-day").max = todayBogota();
   render();
   renderLoading();
-  showView("crear");
+  // La pestaña se recuerda en la dirección (#envios, #finanzas) para poder volver directo.
+  const initial = location.hash.slice(1);
+  document.addEventListener("DOMContentLoaded", () => showView(["envios", "finanzas"].includes(initial) ? initial : "crear"));
   // Carga anticipada para que la pestaña abra con datos
   loadShipments();
 })();

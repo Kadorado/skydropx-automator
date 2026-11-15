@@ -18,6 +18,23 @@ func (h *APIHandler) RegisterShipmentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/skydropx/tracking", h.handleTracking)
 	mux.HandleFunc("GET /api/skydropx/status", h.handleStatuses)
 	mux.HandleFunc("GET /api/skydropx/order-quantities", h.handleOrderQuantities)
+	mux.HandleFunc("GET /api/finanzas", h.handleFinanzas)
+}
+
+// handleFinanzas devuelve el resumen de dinero entre ?desde= y ?hasta= (AAAA-MM-DD, hora de Colombia).
+// Sin desde, cuenta desde el envío más antiguo disponible; sin hasta, hasta hoy.
+func (h *APIHandler) handleFinanzas(w http.ResponseWriter, r *http.Request) {
+	period, err := skydropx.NewPeriod(r.URL.Query().Get("desde"), r.URL.Query().Get("hasta"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	f, err := h.skydropxClient.Finance(r.Context(), period, h.cfg.ComisionPorDatafono)
+	if err != nil {
+		writeSkydropxError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
 }
 
 // handleOrderQuantities devuelve la cantidad de artículos de las órdenes pedidas (?ids=a,b,c).

@@ -60,6 +60,11 @@ var (
 // OrderQuantities devuelve la cantidad total de artículos de cada orden (suma de "quantity" de sus items).
 // Las órdenes que no se pueden consultar se omiten del resultado.
 func (c *Client) OrderQuantities(ctx context.Context, orderIDs []string) (map[string]int, error) {
+	return c.orderQuantitiesUpTo(ctx, orderIDs, maxQuantityLookups)
+}
+
+// orderQuantitiesUpTo es OrderQuantities con un tope propio de consultas nuevas (las de caché no cuentan).
+func (c *Client) orderQuantitiesUpTo(ctx context.Context, orderIDs []string, maxLookups int) (map[string]int, error) {
 	if c.isMock() {
 		return nil, ErrMockMode
 	}
@@ -77,7 +82,7 @@ func (c *Client) OrderQuantities(ctx context.Context, orderIDs []string) (map[st
 			out[id] = q
 			continue
 		}
-		if fetched >= maxQuantityLookups || ctx.Err() != nil {
+		if fetched >= maxLookups || ctx.Err() != nil {
 			break
 		}
 		if fetched > 0 {
