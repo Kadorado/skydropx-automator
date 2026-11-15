@@ -101,6 +101,28 @@ func (c *Client) Problemas(ctx context.Context, since time.Time) ([]Problema, in
 	return out, revisados, nil
 }
 
+// EstadoPorCobrar dice dónde va un envío por cobrar según su rastreo: "oficina" (para reclamar),
+// "novedad" (intento fallido, novedad o devolución) o "camino". Si no se puede rastrear, "camino".
+func (c *Client) EstadoPorCobrar(ctx context.Context, tracking, carrier string) string {
+	if c.isMock() || tracking == "" {
+		return "camino"
+	}
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	st, err := c.trackingStatus(ctx, tracking, carrier)
+	if err != nil {
+		return "camino"
+	}
+	switch problemaKind("pending", st.Raw, st.LastEvent) {
+	case "oficina":
+		return "oficina"
+	case "":
+		return "camino"
+	default:
+		return "novedad"
+	}
+}
+
 // problemaKind clasifica un envío según su cobro y su último evento de rastreo ("" si va bien).
 func problemaKind(onDelivery, raw, lastEvent string) string {
 	switch {

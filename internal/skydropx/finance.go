@@ -94,6 +94,7 @@ type ExtraCharge struct {
 type ShipmentMoney struct {
 	Date         string             `json:"date"`
 	Tracking     string             `json:"tracking"`
+	Carrier      string             `json:"carrier"`
 	Customer     string             `json:"customer"`
 	Status       string             `json:"status"`        // pending | collected | failed | cancelled | vacío
 	LabelCost    float64            `json:"label_cost"`    // costo de la guía según el envío (lo que se le suma al cliente)
@@ -104,6 +105,8 @@ type ShipmentMoney struct {
 	Returned     float64            `json:"returned"`      // abonos y devoluciones a los créditos con esta guía
 	ReturnedAt   string             `json:"returned_at"`   // fecha del último abono o devolución
 	Extra        float64            `json:"extra"`         // cargos extra de esta guía
+	Units        int                `json:"units"`         // datáfonos de la orden (1 si no se conoce)
+	Commission   float64            `json:"commission"`    // comisión del vendedor por este envío, con la de su día
 }
 
 // Finance es el resumen de dinero de un periodo.
@@ -154,7 +157,12 @@ func (c *Client) Finance(ctx context.Context, p Period, rate CommissionRate) (Fi
 	qty, _ := c.orderQuantitiesUpTo(ctx, orderIDs, maxFinanceQuantityFetch)
 	products := orderProducts(orderIDs)
 	for i := range shipments {
-		shipments[i].Product = products[shipments[i].OrderID]
+		s := &shipments[i]
+		s.Product = products[s.OrderID]
+		if !s.Cancelled {
+			s.Units, _ = orderUnits(qty, s.OrderID)
+			s.Commission = float64(s.Units) * rate(s.createdAt())
+		}
 	}
 
 	f := summarizeShipments(shipments, qty, rate)
@@ -264,8 +272,9 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 			status = "cancelled"
 		}
 		row := ShipmentMoney{
-			Date: s.Date, Tracking: s.Tracking, Customer: s.Customer, Status: status,
+			Date: s.Date, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Status: status,
 			LabelCost: s.Cost, CustomerPays: s.customerPays(), Product: s.Product,
+			Units: s.Units, Commission: s.Commission,
 		}
 		if s.Tracking != "" {
 			b := returned[s.Tracking]
@@ -324,6 +333,25 @@ type financeShipment struct {
 	CODAmount  float64 // monto de contra entrega que reporta Skydropx: a veces trae el envío y a veces no
 	Product    float64 // valor del producto según la orden (0 si no se conoce)
 	Cost       float64 // costo de la guía
+	Units      int     // datáfonos de la orden (1 si no se conoce)
+	Commission float64 // comisión del vendedor por este envío
+}
+
+// createdAt es la fecha de creación del envío; si no se entiende, ahora.
+func (s financeShipment) createdAt() time.Time {
+	if t, ok := parseTime(s.Date); ok {
+		return t
+	}
+	return time.Now()
+}
+
+// orderUnits son los datáfonos de la orden; sin dato (known false) o sin cantidad cuenta como 1.
+func orderUnits(qty map[string]int, orderID string) (units int, known bool) {
+	units, known = qty[orderID]
+	if !known || units < 1 {
+		return 1, known
+	}
+	return units, true
 }
 
 // financeShipments toma los envíos creados dentro del periodo.
@@ -411,15 +439,8 @@ func summarizeShipments(shipments []financeShipment, qty map[string]int, rate Co
 		f.LabelCost.Count++
 		f.LabelCost.Amount += s.Cost
 
-		units, known := qty[s.OrderID]
-		if !known || units < 1 {
-			units = 1
-		}
-		created, ok := parseTime(s.Date)
-		if !ok {
-			created = now
-		}
-		perUnit := rate(created)
+		units, known := orderUnits(qty, s.OrderID)
+		perUnit := rate(s.createdAt())
 		switch s.OnDelivery {
 		case "collected":
 			f.Collected.Count++

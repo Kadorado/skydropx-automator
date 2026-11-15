@@ -25,6 +25,10 @@ Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
 /novedades → envíos de los últimos 45 días que hay que gestionar con el cliente: en devolución o sin cobrar, intentos de entrega fallidos, en oficina y con novedad. Trae teléfono, ciudad, guía y último evento.
 
 🤝 <b>COMISIÓN DEL VENDEDOR</b>
+/deuda → lo que se le debe en los últimos 7 días, día por día
+/deuda 3 → últimos 3 días · /deuda hoy · /deuda ayer
+/deuda semana → la semana anterior · /deuda mes → lo que va del mes
+/deuda 2026-11-03 → ese día · /deuda 2026-11-01 2026-11-10 → ese rango
 /comision → ver el valor actual por datáfono y los cambios
 /comision 12000 → cambiarlo desde hoy
 /comision 12000 2026-12-01 → cambiarlo desde esa fecha
@@ -83,6 +87,7 @@ var (
 		{Command: "novedades", Description: "Envíos para gestionar: devoluciones, intentos fallidos, oficina"},
 		{Command: "resumen", Description: "Resumen de hoy y del mes (/resumen semana: la anterior)"},
 		{Command: "imprimir", Description: "Guías de hoy en hojas de 4 (/imprimir 3: últimos 3 días)"},
+		{Command: "deuda", Description: "Lo que se le debe al vendedor (/deuda 3, semana, mes o fechas)"},
 		{Command: "comision", Description: "Ver o cambiar la comisión del vendedor por datáfono"},
 		{Command: "ayuda", Description: "Ver todos los comandos y avisos"},
 	}

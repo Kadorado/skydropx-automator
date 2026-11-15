@@ -96,6 +96,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			b.comandoResumen(ctx, chatID, text)
 			return
 		}
+		if strings.HasPrefix(text, "/deuda") {
+			b.comandoDeuda(ctx, chatID, text)
+			return
+		}
 		if strings.HasPrefix(text, "/novedades") {
 			b.comandoNovedades(ctx, chatID)
 			return
@@ -121,7 +125,8 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 		return
 	}
 	// La comisión y los resúmenes solo se manejan desde el grupo de gestión.
-	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") {
+	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") ||
+		strings.HasPrefix(text, "/deuda") {
 		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
 		return
 	}
