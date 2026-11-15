@@ -418,3 +418,38 @@ func TestAvisosYComisionSoloEnGrupoDeGestion(t *testing.T) {
 		t.Fatalf("tu grupo debía recibir el pago y el problema de entrega: %q", recibidos[-200])
 	}
 }
+
+func TestAyudaEnGrupoDelVendedorSinAutorizar(t *testing.T) {
+	var mu sync.Mutex
+	var textos []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /botTOKEN/sendMessage", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text string `json:"text"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		textos = append(textos, body.Text)
+		mu.Unlock()
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	b, err := New(Options{
+		Token: "TOKEN", APIBase: srv.URL, AllowedChatIDs: []int64{111}, AdminChatIDs: []int64{-5031891945}, GestionChatIDs: []int64{-200},
+		StatePath: filepath.Join(t.TempDir(), "state.json"), CheckEvery: time.Hour,
+	}, skydropx.NewClient(config.Config{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.handle(context.Background(), -5031891945, "Vendedor", "/ayuda")
+	b.handle(context.Background(), -999, "Otro", "/ayuda")
+	mu.Lock()
+	defer mu.Unlock()
+	if len(textos) != 2 || !strings.Contains(textos[0], "GRUPO DE GUÍAS") {
+		t.Fatalf("el grupo del vendedor debía recibir la ayuda: %q", textos)
+	}
+	if !strings.Contains(textos[1], "No estás autorizado") {
+		t.Fatalf("un chat desconocido no debe recibir la ayuda: %q", textos[1])
+	}
+}

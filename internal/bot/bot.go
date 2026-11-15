@@ -108,6 +108,13 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			return // en el grupo de gestión no se crean órdenes
 		}
 	}
+	// El grupo de guías (TELEGRAM_ADMIN_CHAT_IDS) recibe órdenes y guías, pero ahí no se crean pedidos.
+	if !b.isAllowed(chatID) && b.isAdmin(chatID) {
+		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
+			b.say(ctx, chatID, ayudaGrupoGuias)
+		}
+		return // los demás mensajes del grupo (conversación, reenvíos) se ignoran sin responder
+	}
 	if !b.isAllowed(chatID) {
 		log.Printf("bot: chat no autorizado %d", chatID)
 		b.say(ctx, chatID, fmt.Sprintf("No estás autorizado para usar este bot. Tu ID de chat es <code>%d</code>. Pásaselo al administrador para que te dé acceso.", chatID))
@@ -183,6 +190,16 @@ func (b *Bot) guiaDestino() string {
 		return "al grupo"
 	}
 	return "a este chat"
+}
+
+// isAdmin dice si el chat es el grupo del vendedor (TELEGRAM_ADMIN_CHAT_IDS).
+func (b *Bot) isAdmin(chatID int64) bool {
+	for _, id := range b.opts.AdminChatIDs {
+		if id == chatID {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *Bot) isAllowed(chatID int64) bool {

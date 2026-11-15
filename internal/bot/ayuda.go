@@ -66,6 +66,17 @@ Valor: 60000</code>
 
 /ayuda → ver esta ayuda`
 
+// ayudaGrupoGuias es la ayuda del grupo donde el vendedor recibe las guías (no crea pedidos ahí).
+const ayudaGrupoGuias = `📌 <b>GRUPO DE GUÍAS</b>
+
+Aquí llega cada guía lista para que se la reenvíes al comprador:
+📦 La orden creada
+✅ La guía con el número, el enlace de rastreo y el PDF
+
+🛒 Los pedidos se crean escribiéndole al bot por chat privado, con los datos del cliente.
+
+/ayuda → ver esta ayuda`
+
 // Menús de comandos de cada grupo (lo que Telegram sugiere al escribir "/").
 var (
 	comandosGestion = []telegram.Command{
@@ -77,6 +88,9 @@ var (
 	}
 	comandosVendedor = []telegram.Command{
 		{Command: "ayuda", Description: "Cómo enviar un pedido"},
+	}
+	comandosGrupoGuias = []telegram.Command{
+		{Command: "ayuda", Description: "Qué llega a este grupo"},
 	}
 )
 
@@ -94,7 +108,11 @@ func (b *Bot) configurarComandos(ctx context.Context) {
 			continue
 		}
 		visto[id] = true
-		if err := b.tg.SetChatCommands(ctx, id, comandosVendedor); err != nil {
+		cmds := comandosVendedor
+		if !b.isAllowed(id) {
+			cmds = comandosGrupoGuias // grupo solo para recibir guías
+		}
+		if err := b.tg.SetChatCommands(ctx, id, cmds); err != nil {
 			log.Printf("bot: no se pudo fijar el menú de comandos del chat %d: %v", id, err)
 		}
 	}
