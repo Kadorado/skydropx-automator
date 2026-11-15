@@ -276,6 +276,7 @@ func (c *Client) CreateLabel(ctx context.Context, orderID string, q LabelQuote, 
 	if err := json.Unmarshal(respBody, &created); err != nil || created.Data.ID == "" {
 		return "", fmt.Errorf("respuesta inesperada de Skydropx al crear el envío")
 	}
+	c.forgetShipmentList() // la guía nueva debe aparecer en la próxima consulta
 	return created.Data.ID, nil
 }
 

@@ -25,6 +25,11 @@ type Client struct {
 	tokenExpiry time.Time
 
 	origin originTemplate
+
+	// La lista de envíos se comparte unos segundos entre el panel, el rastreo, finanzas y el bot.
+	listMu       sync.Mutex
+	listCache    ShipmentList
+	listCachedAt time.Time
 }
 
 func NewClient(cfg config.Config) *Client {

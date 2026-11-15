@@ -8,13 +8,35 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ErrMockMode se devuelve cuando la app no está en live: no hay envíos reales que consultar.
 var ErrMockMode = fmt.Errorf("modo mock: no hay envíos reales de Skydropx")
 
-// get hace un GET autenticado con bearer token y devuelve el cuerpo y el status.
+const (
+	shipmentListTTL     = 30 * time.Second       // cuánto se reutiliza la lista de envíos ya descargada
+	shipmentPagePause   = 600 * time.Millisecond // el límite de la API es de 2 solicitudes por segundo
+	maxRateLimitRetries = 3                      // reintentos cuando Skydropx responde 429
+)
+
+// get hace un GET autenticado y, si Skydropx responde 429 (límite de solicitudes), espera y reintenta.
 func (c *Client) get(ctx context.Context, u string) ([]byte, int, error) {
+	for attempt := 0; ; attempt++ {
+		body, status, err := c.getOnce(ctx, u)
+		if err != nil || status != http.StatusTooManyRequests || attempt >= maxRateLimitRetries {
+			return body, status, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 2 * time.Second):
+		}
+	}
+}
+
+// getOnce hace un GET autenticado con bearer token y devuelve el cuerpo y el status.
+func (c *Client) getOnce(ctx context.Context, u string) ([]byte, int, error) {
 	token, err := c.getAccessToken(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -44,13 +66,44 @@ type ShipmentList struct {
 }
 
 // ListShipments trae las páginas de GET /api/v1/shipments y las une en una sola lista.
+// Si se pide varias veces seguidas (panel, rastreo, finanzas, bot), reutiliza la misma descarga
+// durante shipmentListTTL; las llamadas simultáneas esperan a la primera en vez de repetirla.
 func (c *Client) ListShipments(ctx context.Context) (ShipmentList, error) {
-	var out ShipmentList
 	if c.isMock() {
-		return out, ErrMockMode
+		return ShipmentList{}, ErrMockMode
 	}
+	c.listMu.Lock()
+	defer c.listMu.Unlock()
+	if !c.listCachedAt.IsZero() && time.Since(c.listCachedAt) < shipmentListTTL {
+		return c.listCache, nil
+	}
+	out, err := c.fetchShipments(ctx)
+	if err != nil {
+		return out, err
+	}
+	c.listCache, c.listCachedAt = out, time.Now()
+	return out, nil
+}
+
+// forgetShipmentList descarta la lista guardada para que la próxima consulta la traiga de nuevo.
+func (c *Client) forgetShipmentList() {
+	c.listMu.Lock()
+	c.listCachedAt = time.Time{}
+	c.listMu.Unlock()
+}
+
+// fetchShipments descarga todas las páginas, con una pausa entre ellas para respetar el límite de la API.
+func (c *Client) fetchShipments(ctx context.Context) (ShipmentList, error) {
+	var out ShipmentList
 	seenIncluded := map[string]bool{}
 	for page := 1; ; page++ {
+		if page > 1 {
+			select {
+			case <-ctx.Done():
+				return out, ctx.Err()
+			case <-time.After(shipmentPagePause):
+			}
+		}
 		u := fmt.Sprintf("%s/api/v1/shipments?page=%d&per_page=20", c.cfg.SkydropxBaseURL, page)
 		body, status, err := c.get(ctx, u)
 		if err != nil {
