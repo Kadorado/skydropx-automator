@@ -232,11 +232,17 @@
     }
   }
 
-  // Lo que paga el cliente se arma como producto + envío (igual que en el mensaje del bot),
-  // así que al cobrarse se separa en esas dos partes.
+  // Lo que paga el cliente es producto + envío. El producto sale de la orden; si no se conoce,
+  // se descuenta el envío (guía + tarifa de servicio, sin la protección, que no se le cobra al cliente).
   function desglose(e) {
-    const envio = Math.min(e.label_cost || 0, e.customer_pays || 0);
-    return { producto: (e.customer_pays || 0) - envio, envio };
+    const paga = e.customer_pays || 0;
+    if (e.product > 0) {
+      const producto = Math.min(e.product, paga);
+      return { producto, envio: paga - producto };
+    }
+    const parts = e.charged_parts || {};
+    const envio = Math.min(paga, (parts.guia || e.label_cost || 0) + (parts.servicio || 0));
+    return { producto: paga - envio, envio };
   }
 
   const signed = (v) => `${v < 0 ? "−" : "+"}${money(Math.abs(v))}`;

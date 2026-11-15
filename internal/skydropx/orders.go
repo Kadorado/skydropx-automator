@@ -54,7 +54,8 @@ const maxQuantityLookups = 20
 
 var (
 	quantityMu    sync.Mutex
-	quantityCache = map[string]int{} // la cantidad de una orden no cambia: se guarda mientras corra la app
+	quantityCache = map[string]int{}     // la cantidad de una orden no cambia: se guarda mientras corra la app
+	productCache  = map[string]float64{} // valor del producto de la orden (cantidad × precio de cada artículo)
 )
 
 // OrderQuantities devuelve la cantidad total de artículos de cada orden (suma de "quantity" de sus items).
@@ -89,43 +90,63 @@ func (c *Client) orderQuantitiesUpTo(ctx context.Context, orderIDs []string, max
 			time.Sleep(trackSpacing) // límite de 2 solicitudes por segundo
 		}
 		fetched++
-		q, err := c.orderQuantity(ctx, id)
+		q, product, err := c.orderQuantity(ctx, id)
 		if err != nil {
 			continue
 		}
 		quantityCache[id] = q
+		if product > 0 {
+			productCache[id] = product
+		}
 		out[id] = q
 	}
 	return out, nil
 }
 
-func (c *Client) orderQuantity(ctx context.Context, orderID string) (int, error) {
+// orderProducts devuelve el valor del producto de las órdenes ya consultadas (sin pedir nada nuevo).
+func orderProducts(orderIDs []string) map[string]float64 {
+	quantityMu.Lock()
+	defer quantityMu.Unlock()
+	out := map[string]float64{}
+	for _, id := range orderIDs {
+		if v, ok := productCache[id]; ok {
+			out[id] = v
+		}
+	}
+	return out
+}
+
+// orderQuantity devuelve la cantidad de artículos de la orden y el valor del producto (cantidad × precio).
+func (c *Client) orderQuantity(ctx context.Context, orderID string) (int, float64, error) {
 	body, status, err := c.get(ctx, c.cfg.SkydropxBaseURL+"/api/v1/orders/"+url.PathEscape(orderID))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if status < 200 || status >= 300 {
-		return 0, fmt.Errorf("Skydropx respondió HTTP %d al consultar la orden", status)
+		return 0, 0, fmt.Errorf("Skydropx respondió HTTP %d al consultar la orden", status)
 	}
 	var raw struct {
 		Included []struct {
 			Type       string `json:"type"`
 			Attributes struct {
-				Quantity int `json:"quantity"`
+				Quantity int             `json:"quantity"`
+				Price    json.RawMessage `json:"price"`
 			} `json:"attributes"`
 		} `json:"included"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return 0, fmt.Errorf("respuesta inesperada de Skydropx al consultar la orden: %w", err)
+		return 0, 0, fmt.Errorf("respuesta inesperada de Skydropx al consultar la orden: %w", err)
 	}
 	total := 0
+	product := 0.0
 	for _, inc := range raw.Included {
 		if inc.Type == "item" || inc.Type == "items" {
 			total += inc.Attributes.Quantity
+			product += float64(inc.Attributes.Quantity) * parseAmount(inc.Attributes.Price)
 		}
 	}
 	if total == 0 {
-		return 0, fmt.Errorf("la orden no tiene artículos")
+		return 0, 0, fmt.Errorf("la orden no tiene artículos")
 	}
-	return total, nil
+	return total, product, nil
 }

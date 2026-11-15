@@ -30,7 +30,7 @@ func TestSummarizeShipmentsComision(t *testing.T) {
 	if c.PendingUnits != 4 || c.PendingAmount != 60000 || c.Estimated != 1 {
 		t.Fatalf("por cobrar: %d datáfonos / %v (estimados %d), se esperaban 4 / 60000 (1)", c.PendingUnits, c.PendingAmount, c.Estimated)
 	}
-	if f.Collected != (Money{2, 169146}) || f.Pending != (Money{2, 230000}) || f.Failed != (Money{1, 80000}) { // producto + envío
+	if f.Collected != (Money{2, 144573}) || f.Pending != (Money{2, 205000}) || f.Failed != (Money{1, 70000}) {
 		t.Fatalf("contra entrega inesperado: cobrado %+v, por cobrar %+v, fallido %+v", f.Collected, f.Pending, f.Failed)
 	}
 	if f.Shipments != 6 || f.Cancelled != 1 || f.LabelCost != (Money{5, 59573}) {
@@ -192,5 +192,22 @@ func TestEnviosSinGuiaQuedanFuera(t *testing.T) {
 	got := withLabel(financeShipments(list, p))
 	if len(got) != 1 || got[0].Tracking != "240065822548" {
 		t.Fatalf("envíos con guía: %+v", got)
+	}
+}
+
+func TestCustomerPaysConYSinEnvioIncluido(t *testing.T) {
+	// Manuel: Skydropx reporta 72.573, que ya trae el envío (60.000 + 12.573).
+	manuel := financeShipment{Product: 60000, CODAmount: 72573, Cost: 12266}
+	if got := manuel.customerPays(); got != 72573 {
+		t.Fatalf("Manuel paga %v, se esperaba 72573", got)
+	}
+	// Aracely: Skydropx reporta 120.000, solo el producto; el cliente paga además el envío.
+	aracely := financeShipment{Product: 120000, CODAmount: 120000, Cost: 16532}
+	if got := aracely.customerPays(); got != 136532 {
+		t.Fatalf("Aracely paga %v, se esperaba 136532", got)
+	}
+	// Sin el producto de la orden se confía en lo reportado.
+	if got := (financeShipment{CODAmount: 72573, Cost: 12266}).customerPays(); got != 72573 {
+		t.Fatalf("sin producto: %v", got)
 	}
 }

@@ -100,6 +100,7 @@ type ShipmentMoney struct {
 	Charged      float64            `json:"charged"`       // todo lo descontado de los créditos con esta guía
 	ChargedParts map[string]float64 `json:"charged_parts"` // lo descontado por concepto: guia, proteccion, servicio, otro
 	CustomerPays float64            `json:"customer_pays"` // lo que la transportadora le cobra al cliente (producto + envío)
+	Product      float64            `json:"product"`       // valor del producto según la orden (0 si no se conoce)
 	Returned     float64            `json:"returned"`      // abonos y devoluciones a los créditos con esta guía
 	ReturnedAt   string             `json:"returned_at"`   // fecha del último abono o devolución
 	Extra        float64            `json:"extra"`         // cargos extra de esta guía
@@ -145,6 +146,10 @@ func (c *Client) Finance(ctx context.Context, p Period, perUnit float64) (Financ
 		}
 	}
 	qty, _ := c.orderQuantitiesUpTo(ctx, orderIDs, maxFinanceQuantityFetch)
+	products := orderProducts(orderIDs)
+	for i := range shipments {
+		shipments[i].Product = products[shipments[i].OrderID]
+	}
 
 	f := summarizeShipments(shipments, qty, perUnit)
 	f.Truncated = list.Truncated
@@ -254,7 +259,7 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 		}
 		row := ShipmentMoney{
 			Date: s.Date, Tracking: s.Tracking, Customer: s.Customer, Status: status,
-			LabelCost: s.Cost, CustomerPays: s.CODAmount + s.Cost, // la transportadora cobra el producto más el envío
+			LabelCost: s.Cost, CustomerPays: s.customerPays(), Product: s.Product,
 		}
 		if s.Tracking != "" {
 			b := returned[s.Tracking]
@@ -273,6 +278,17 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Date > out[j].Date })
 	return out, total
+}
+
+// customerPays es lo que la transportadora le cobra al cliente: el producto más el envío.
+// Skydropx a veces reporta el contra entrega ya con el envío (60.000 + 12.573 = 72.573) y a veces
+// solo el producto (120.000): si se conoce el producto, se toma el mayor entre lo reportado y
+// producto + envío. Sin el producto, se confía en lo reportado.
+func (s financeShipment) customerPays() float64 {
+	if s.Product > 0 && s.Product+s.Cost > s.CODAmount {
+		return s.Product + s.Cost
+	}
+	return s.CODAmount
 }
 
 // withLabel deja fuera los envíos sin número de guía: intentos fallidos que nunca se generaron ni se pagaron.
@@ -295,7 +311,8 @@ type financeShipment struct {
 	Cancelled  bool
 	NoLabel    bool    // no tiene número de guía: falló o no se generó, no se pagó
 	OnDelivery string  // pending | collected | failed | cancelled | vacío
-	CODAmount  float64 // valor del producto a cobrar (Skydropx no le suma el envío)
+	CODAmount  float64 // monto de contra entrega que reporta Skydropx: a veces trae el envío y a veces no
+	Product    float64 // valor del producto según la orden (0 si no se conoce)
 	Cost       float64 // costo de la guía
 }
 
@@ -380,21 +397,21 @@ func summarizeShipments(shipments []financeShipment, qty map[string]int, perUnit
 		switch s.OnDelivery {
 		case "collected":
 			f.Collected.Count++
-			f.Collected.Amount += s.CODAmount + s.Cost
+			f.Collected.Amount += s.customerPays()
 			f.Commission.PaidUnits += units
 			if !known {
 				f.Commission.Estimated++
 			}
 		case "pending":
 			f.Pending.Count++
-			f.Pending.Amount += s.CODAmount + s.Cost
+			f.Pending.Amount += s.customerPays()
 			f.Commission.PendingUnits += units
 			if !known {
 				f.Commission.Estimated++
 			}
 		case "failed":
 			f.Failed.Count++
-			f.Failed.Amount += s.CODAmount + s.Cost
+			f.Failed.Amount += s.customerPays()
 		}
 	}
 	f.Commission.PaidAmount = float64(f.Commission.PaidUnits) * perUnit
