@@ -59,16 +59,18 @@ func TestDeudaTexto(t *testing.T) {
 		ads:     []settings.AdExpense{{Date: "2026-11-13", Amount: 40000, PaidBy: "yo"}, {Date: "2026-11-01", Amount: 99000}},
 		saldo:   6000,
 	})
-	for _, want := range []string{"Del 12 nov al 14 nov",
-		"sáb 14 nov</b> · 2 pedidos = 3 datáfonos\n   🚚 $12.000 (1 datáfono) · 🏢 $24.000 (2 datáfonos)",
-		"vie 13 nov</b> · 3 pedidos = 4 datáfonos\n   ✅ $36.000 (3 datáfonos) · ⚠️ $12.000 (1 datáfono)",
-		"jue 12 nov</b> · 1 datáfono\n   💵 $12.000 (1 datáfono) · ❌ 1 sin cobrar",
-		"Pedidos de más de un datáfono",
-		"sáb 14 nov · Ana Ruiz: <b>2 datáfonos</b> × $12.000 = $24.000 🏢",
-		"vie 13 nov · Luis Gómez: <b>2 datáfonos</b> × $12.000 = $24.000 ✅",
-		"Acumulado en esos días: $96.000</b> (6 pedidos = 8 datáfonos)", "Ya le pagaste: $12.000 (1 datáfono)", "aún le debes <b>$6.000", "Publicidad en esos días: $40.000; él pone $20.000",
-		"Se le debe: $36.000</b> (2 pedidos = 3 datáfonos, ya cobrados)",
-		"En camino: $12.000 (1 datáfono)", "En oficina: $24.000 (1 pedido = 2 datáfonos)", "Con novedad: $12.000 (1 datáfono)"} {
+	for _, want := range []string{"Del 12 nov al 14 nov · 6 pedidos = 8 datáfonos",
+		"PARA PAGARLE HOY: $42.000", "Cobrado sin pagarle: $36.000", "Más lo que le quedó debiendo: +$6.000",
+		"Ya le pagaste: <b>$12.000</b> · 1 datáfono",
+		"Cobrado, por pagarle: <b>$36.000</b> · 3 datáfonos",
+		"Falta que el cliente pague: <b>$48.000</b> · 4 datáfonos",
+		"🚚 En camino: $12.000 · 1 datáfono", "🏢 En oficina (el cliente debe reclamarlo): $24.000 · 2 datáfonos",
+		"⚠️ Con novedad o en devolución: $12.000 · 1 datáfono",
+		"No se cobraron: 1 pedido", "Total ganado: $96.000</b> · 8 datáfonos",
+		"Publicidad en estas fechas: $40.000 (él pone $20.000)",
+		"<b>sáb 14 nov</b> · 3 datáfonos · $36.000\n   🚚 $12.000 · 🏢 $24.000\n   📦 Ana Ruiz: 2 datáfonos × $12.000 🏢",
+		"<b>vie 13 nov</b> · 4 datáfonos · $48.000\n   ✅ $36.000 · ⚠️ $12.000\n   📦 Luis Gómez: 2 datáfonos × $12.000 ✅",
+		"<b>jue 12 nov</b> · 1 datáfono · $12.000\n   💵 $12.000 · ❌ 1 sin cobrar"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("falta %q en:\n%s", want, msg)
 		}

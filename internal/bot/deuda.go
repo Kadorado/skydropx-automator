@@ -142,81 +142,154 @@ type cuentaVendedor struct {
 	saldo   float64
 }
 
-// deudaTexto arma el mensaje de /deuda: cada día con lo que ya se le pagó al vendedor (guías pagadas),
-// lo que se le debe (envíos cobrados) y lo que se le deberá (envíos por cobrar, separados en camino, en
-// oficina o con novedad según estados), los pedidos de varios datáfonos uno por uno, el total, la
-// publicidad de esos días y el saldo de pagos y publicidad. Las ventas cuentan el día en que se generó la guía.
+// deudaTexto arma el mensaje de /deuda en tres bloques: cuánto pagarle hoy (lo cobrado sin pagarle más
+// el saldo de pagos y publicidad), el resumen por estado y el día por día con los pedidos de varios
+// datáfonos. Las ventas cuentan el día en que se generó la guía; los envíos por cobrar se separan en
+// camino, oficina o novedad según estados.
 func deudaTexto(desde, hasta time.Time, f skydropx.Finance, estados map[string]string, c cuentaVendedor) string {
-	pagadas := c.pagadas
 	type dia struct {
 		liquidado, pagado, camino, oficina, novedad monto
 		fallidos                                    int
+		varios                                      []string // pedidos de más de un datáfono
 	}
 	iconos := map[string]string{"liquidado": "💵", "pagado": "✅", "camino": "🚚", "oficina": "🏢", "novedad": "⚠️"}
 	dias := map[string]*dia{}
 	var total dia
-	var varios []string // pedidos de más de un datáfono, del más nuevo al más antiguo
 	for _, r := range f.PerShipment {
 		t, err := time.Parse(time.RFC3339, r.Date)
 		if err != nil {
 			continue
 		}
-		t = t.In(colombiaTZ)
-		d := dias[t.Format("2006-01-02")]
+		key := t.In(colombiaTZ).Format("2006-01-02")
+		d := dias[key]
 		if d == nil {
 			d = &dia{}
-			dias[t.Format("2006-01-02")] = d
+			dias[key] = d
 		}
 		estado := ""
 		switch r.Status {
 		case "collected":
-			if pagadas[r.Tracking] != "" {
-				estado = "liquidado"
-				d.liquidado.sumar(r)
-				total.liquidado.sumar(r)
-				break
-			}
 			estado = "pagado"
-			d.pagado.sumar(r)
-			total.pagado.sumar(r)
+			if c.pagadas[r.Tracking] != "" {
+				estado = "liquidado"
+			}
 		case "pending":
-			switch estados[r.Tracking] {
-			case "oficina":
-				estado = "oficina"
-				d.oficina.sumar(r)
-				total.oficina.sumar(r)
-			case "novedad":
-				estado = "novedad"
-				d.novedad.sumar(r)
-				total.novedad.sumar(r)
-			default:
-				estado = "camino"
-				d.camino.sumar(r)
-				total.camino.sumar(r)
+			estado = "camino"
+			if e := estados[r.Tracking]; e == "oficina" || e == "novedad" {
+				estado = e
 			}
 		case "failed":
 			d.fallidos++
+			total.fallidos++
 		}
-		if estado != "" && r.Units > 1 {
+		if estado == "" {
+			continue
+		}
+		for _, x := range []*dia{d, &total} {
+			map[string]*monto{"liquidado": &x.liquidado, "pagado": &x.pagado, "camino": &x.camino,
+				"oficina": &x.oficina, "novedad": &x.novedad}[estado].sumar(r)
+		}
+		if r.Units > 1 {
 			cliente := strings.TrimSpace(r.Customer)
 			if cliente == "" {
-				cliente = "guía " + r.Tracking
+				cliente = "Guía " + r.Tracking
 			}
-			varios = append(varios, fmt.Sprintf("• %s %s · %s: <b>%s</b> × %s = %s %s",
-				diasCortos[t.Weekday()], diaCorto(t), html.EscapeString(cliente), datafonos(r.Units),
-				formatCOP(r.Commission/float64(r.Units)), formatCOP(r.Commission), iconos[estado]))
+			d.varios = append(d.varios, fmt.Sprintf("📦 %s: %s × %s %s", html.EscapeString(cliente),
+				datafonos(r.Units), formatCOP(r.Commission/float64(r.Units)), iconos[estado]))
 		}
+	}
+
+	var porCobrar, ganado monto
+	for _, m := range []monto{total.camino, total.oficina, total.novedad} {
+		porCobrar.juntar(m)
+	}
+	for _, m := range []monto{total.liquidado, total.pagado, porCobrar} {
+		ganado.juntar(m)
 	}
 
 	var b strings.Builder
-	b.WriteString("🤝 <b>Comisión del vendedor</b>\n")
+	b.WriteString("🤝 <b>COMISIÓN DEL VENDEDOR</b>\n")
 	if desde.Equal(hasta) {
-		fmt.Fprintf(&b, "%s %s\n\n", diasCortos[desde.Weekday()], diaCorto(desde))
+		fmt.Fprintf(&b, "📅 %s %s", diasCortos[desde.Weekday()], diaCorto(desde))
 	} else {
-		fmt.Fprintf(&b, "Del %s al %s\n\n", diaCorto(desde), diaCorto(hasta))
+		fmt.Fprintf(&b, "📅 Del %s al %s", diaCorto(desde), diaCorto(hasta))
+	}
+	if ganado.pedidos == 0 {
+		b.WriteString("\n\nNo hay ventas en esas fechas.\n")
+		if s := saldoTexto(c.saldo); s != "" {
+			b.WriteString("\n" + s)
+		}
+		return b.String()
+	}
+	fmt.Fprintf(&b, " · %s\n", ganado.cuenta())
+
+	// 1. Cuánto pagarle hoy.
+	b.WriteString("\n━━━━━━━━━━━━━━━\n")
+	hoy := total.pagado.valor + c.saldo
+	switch {
+	case hoy > 0.5:
+		fmt.Fprintf(&b, "💰 <b>PARA PAGARLE HOY: %s</b>\n", formatCOP(hoy))
+	case hoy < -0.5:
+		fmt.Fprintf(&b, "💰 <b>HOY NO LE DEBES: él te debe %s</b>\n", formatCOP(-hoy))
+	default:
+		b.WriteString("💰 <b>HOY NO LE DEBES NADA</b>\n")
+	}
+	if c.saldo > 0.5 || c.saldo < -0.5 {
+		fmt.Fprintf(&b, "   ✅ Cobrado sin pagarle: %s\n", formatCOP(total.pagado.valor))
+		if c.saldo > 0 {
+			fmt.Fprintf(&b, "   ↩️ Más lo que le quedó debiendo: +%s\n", formatCOP(c.saldo))
+		} else {
+			fmt.Fprintf(&b, "   📣 Menos lo que él te debe (publicidad o adelantos): −%s\n", formatCOP(-c.saldo))
+		}
+	} else if total.pagado.pedidos > 0 {
+		fmt.Fprintf(&b, "   ✅ Es lo cobrado sin pagarle (%s)\n", total.pagado.cuenta())
+	}
+	b.WriteString("   <i>Cuenta las ventas de estas fechas; para más días: /deuda mes</i>\n")
+	b.WriteString("━━━━━━━━━━━━━━━\n")
+
+	// 2. Resumen por estado.
+	b.WriteString("\n📊 <b>RESUMEN</b>\n")
+	if total.liquidado.pedidos > 0 {
+		fmt.Fprintf(&b, "💵 Ya le pagaste: <b>%s</b> · %s\n", formatCOP(total.liquidado.valor), datafonos(total.liquidado.unidades))
+	}
+	fmt.Fprintf(&b, "✅ Cobrado, por pagarle: <b>%s</b> · %s\n", formatCOP(total.pagado.valor), datafonos(total.pagado.unidades))
+	if porCobrar.pedidos > 0 {
+		fmt.Fprintf(&b, "⏳ Falta que el cliente pague: <b>%s</b> · %s\n", formatCOP(porCobrar.valor), datafonos(porCobrar.unidades))
+		for _, x := range []struct {
+			txt string
+			m   monto
+		}{{"🚚 En camino", total.camino}, {"🏢 En oficina (el cliente debe reclamarlo)", total.oficina},
+			{"⚠️ Con novedad o en devolución", total.novedad}} {
+			if x.m.pedidos > 0 {
+				fmt.Fprintf(&b, "      %s: %s · %s\n", x.txt, formatCOP(x.m.valor), datafonos(x.m.unidades))
+			}
+		}
+	}
+	if total.fallidos > 0 {
+		fmt.Fprintf(&b, "❌ No se cobraron: %s (no suman comisión)\n", pedidos(total.fallidos))
+	}
+	fmt.Fprintf(&b, "🏆 <b>Total ganado: %s</b> · %s\n", formatCOP(ganado.valor), datafonos(ganado.unidades))
+	var ads, adsVendedor float64
+	for _, a := range c.ads {
+		if a.Date >= desde.Format("2006-01-02") && a.Date <= hasta.Format("2006-01-02") {
+			ads += a.Amount
+			adsVendedor += a.VendorShare()
+		}
+	}
+	if ads > 0 {
+		fmt.Fprintf(&b, "📣 Publicidad en estas fechas: %s", formatCOP(ads))
+		switch {
+		case adsVendedor < -0.5:
+			fmt.Fprintf(&b, " (él pone %s)\n", formatCOP(-adsVendedor))
+		case adsVendedor > 0.5:
+			fmt.Fprintf(&b, " (le debes %s por lo que pagó de más)\n", formatCOP(adsVendedor))
+		default:
+			b.WriteString(" (ya pagada mitad y mitad)\n")
+		}
 	}
 
-	hayVentas := false
+	// 3. Día por día.
+	b.WriteString("\n📅 <b>DÍA POR DÍA</b>\n")
 	for t := hasta; !t.Before(desde); t = t.AddDate(0, 0, -1) {
 		d := dias[t.Format("2006-01-02")]
 		if d == nil {
@@ -229,13 +302,9 @@ func deudaTexto(desde, hasta time.Time, f skydropx.Finance, estados map[string]s
 		if todo.pedidos+d.fallidos == 0 {
 			continue
 		}
-		if !hayVentas {
-			b.WriteString("<b>Por día</b> (💵 ya le pagaste · ✅ cobrado, por pagarle · 🚚 en camino · 🏢 en oficina · ⚠️ con novedad)\n")
-			hayVentas = true
-		}
-		fmt.Fprintf(&b, "• <b>%s %s</b>", diasCortos[t.Weekday()], diaCorto(t))
+		fmt.Fprintf(&b, "\n<b>%s %s</b>", diasCortos[t.Weekday()], diaCorto(t))
 		if todo.pedidos > 0 {
-			fmt.Fprintf(&b, " · %s", todo.cuenta())
+			fmt.Fprintf(&b, " · %s · %s", datafonos(todo.unidades), formatCOP(todo.valor))
 		}
 		var partes []string
 		for _, x := range []struct {
@@ -243,69 +312,25 @@ func deudaTexto(desde, hasta time.Time, f skydropx.Finance, estados map[string]s
 			m      monto
 		}{{"liquidado", d.liquidado}, {"pagado", d.pagado}, {"camino", d.camino}, {"oficina", d.oficina}, {"novedad", d.novedad}} {
 			if x.m.pedidos > 0 {
-				partes = append(partes, fmt.Sprintf("%s %s (%s)", iconos[x.estado], formatCOP(x.m.valor), datafonos(x.m.unidades)))
+				partes = append(partes, fmt.Sprintf("%s %s", iconos[x.estado], formatCOP(x.m.valor)))
 			}
 		}
 		if d.fallidos > 0 {
 			partes = append(partes, fmt.Sprintf("❌ %d sin cobrar", d.fallidos))
 		}
 		b.WriteString("\n   " + strings.Join(partes, " · ") + "\n")
-	}
-	if !hayVentas {
-		b.WriteString("No hay ventas en esas fechas.\n")
-		return b.String()
-	}
-
-	if len(varios) > 0 {
-		b.WriteString("\n📦 <b>Pedidos de más de un datáfono</b> (cada datáfono suma su comisión)\n")
-		b.WriteString(strings.Join(varios, "\n") + "\n")
-	}
-
-	var acumulado monto
-	for _, m := range []monto{total.liquidado, total.pagado, total.camino, total.oficina, total.novedad} {
-		acumulado.juntar(m)
-	}
-	fmt.Fprintf(&b, "\n🏆 <b>Acumulado en esos días: %s</b> (%s)\n", formatCOP(acumulado.valor), acumulado.cuenta())
-	if total.liquidado.pedidos > 0 {
-		fmt.Fprintf(&b, "💵 Ya le pagaste: %s (%s)\n", formatCOP(total.liquidado.valor), total.liquidado.cuenta())
-	}
-	fmt.Fprintf(&b, "✅ <b>Se le debe: %s</b> (%s, ya cobrados)\n", formatCOP(total.pagado.valor), total.pagado.cuenta())
-	if total.camino.pedidos > 0 {
-		fmt.Fprintf(&b, "🚚 En camino: %s (%s)\n", formatCOP(total.camino.valor), total.camino.cuenta())
-	}
-	if total.oficina.pedidos > 0 {
-		fmt.Fprintf(&b, "🏢 En oficina: %s (%s); el cliente debe reclamarlo\n", formatCOP(total.oficina.valor), total.oficina.cuenta())
-	}
-	if total.novedad.pedidos > 0 {
-		fmt.Fprintf(&b, "⚠️ Con novedad: %s (%s); intento fallido, novedad o en devolución\n", formatCOP(total.novedad.valor), total.novedad.cuenta())
-	}
-	b.WriteString("<i>Lo que no está cobrado se le debe cuando el cliente pague.</i>\n")
-	var ads, adsVendedor float64
-	for _, a := range c.ads {
-		if a.Date >= desde.Format("2006-01-02") && a.Date <= hasta.Format("2006-01-02") {
-			ads += a.Amount
-			adsVendedor += a.VendorShare()
+		for _, v := range d.varios {
+			b.WriteString("   " + v + "\n")
 		}
 	}
-	if ads > 0 {
-		fmt.Fprintf(&b, "\n📣 Publicidad en esos días: %s; ", formatCOP(ads))
-		switch {
-		case adsVendedor < -0.5:
-			fmt.Fprintf(&b, "él pone %s de su comisión\n", formatCOP(-adsVendedor))
-		case adsVendedor > 0.5:
-			fmt.Fprintf(&b, "le debes %s por lo que pagó de más\n", formatCOP(adsVendedor))
-		default:
-			b.WriteString("ya pagaron mitad y mitad\n")
-		}
-	}
-	if s := saldoTexto(c.saldo); s != "" {
-		b.WriteString("\n" + s)
-	}
+
+	b.WriteString("\n<i>💵 pagado · ✅ cobrado, por pagarle · 🚚 en camino · 🏢 en oficina · ⚠️ novedad. ")
+	b.WriteString("Lo que falta por cobrar se le paga cuando el cliente pague.</i>\n")
 	if total.pagado.pedidos > 0 {
 		b.WriteString("<i>Cuando le pagues, regístralo con /pago (ej. <code>/pago 150000</code>).</i>\n")
 	}
-	if c := f.Commission; c.Estimated > 0 {
-		fmt.Fprintf(&b, "\n⚠️ <i>No se pudo saber la cantidad de %d pedido(s) y se contaron como 1 datáfono: si alguno era de más, la deuda es mayor. Vuelve a pedir /deuda en un rato.</i>\n", c.Estimated)
+	if f.Commission.Estimated > 0 {
+		fmt.Fprintf(&b, "\n⚠️ <i>No se pudo saber la cantidad de %d pedido(s) y se contaron como 1 datáfono: si alguno era de más, la deuda es mayor. Vuelve a pedir /deuda en un rato.</i>\n", f.Commission.Estimated)
 	}
 	if f.Truncated {
 		b.WriteString("\n<i>Hay muchos envíos: los más antiguos pueden no estar incluidos.</i>\n")

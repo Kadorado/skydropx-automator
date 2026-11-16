@@ -57,9 +57,9 @@ func TestPorPagarYPagoTexto(t *testing.T) {
 	}
 	p := settings.VendorPayment{Date: "2026-11-16", Amount: 120000, Covered: 120000, Units: 8}
 	msg := pagoTexto(p, cubre, quedan, 0)
-	for _, want := range []string{"Pago al vendedor registrado: $120.000", "Envíos que quedan pagados",
-		"mié 11 nov · 1 pedido = 4 datáfonos · $60.000", "Comisión pagada: $120.000</b> (4 pedidos = 8 datáfonos)",
-		"Aún se le debe: $45.000</b> (1 pedido = 3 datáfonos, ya cobrados)", "vie 13 nov · 1 pedido = 3 datáfonos · $45.000"} {
+	for _, want := range []string{"PAGO AL VENDEDOR REGISTRADO", "lun 16 nov · <b>$120.000</b>",
+		"mié 11 nov · 1 pedido = 4 datáfonos · $60.000", "QUEDA PAGADO: $120.000</b> · 4 pedidos = 8 datáfonos",
+		"AÚN SE LE DEBE: $45.000</b> · 1 pedido = 3 datáfonos ya cobrados", "vie 13 nov · 1 pedido = 3 datáfonos · $45.000"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("falta %q en:\n%s", want, msg)
 		}

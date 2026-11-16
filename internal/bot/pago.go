@@ -145,6 +145,15 @@ func fechaEnvio(r skydropx.ShipmentMoney) time.Time {
 	return t
 }
 
+// fechaCorta muestra "2026-11-16" como "lun 16 nov" (si no se entiende, la deja igual).
+func fechaCorta(s string) string {
+	t, err := time.ParseInLocation("2006-01-02", s, colombiaTZ)
+	if err != nil {
+		return s
+	}
+	return diasCortos[t.Weekday()] + " " + diaCorto(t)
+}
+
 // porDia resume envíos por día de la guía, en el orden en que vienen.
 func porDia(rows []skydropx.ShipmentMoney) (lineas []string, total monto) {
 	dias := map[string]*monto{}
@@ -172,9 +181,9 @@ func porDia(rows []skydropx.ShipmentMoney) (lineas []string, total monto) {
 // queda el saldo con el vendedor.
 func pagoTexto(p settings.VendorPayment, cubre, quedan []skydropx.ShipmentMoney, saldoAntes float64) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "💵 <b>Pago al vendedor registrado: %s</b> (%s)\n", formatCOP(p.Amount), p.Date)
+	fmt.Fprintf(&b, "💵 <b>PAGO AL VENDEDOR REGISTRADO</b>\n📅 %s · <b>%s</b>\n", fechaCorta(p.Date), formatCOP(p.Amount))
 	if p.Through != "" {
-		fmt.Fprintf(&b, "Cubre lo cobrado de guías creadas hasta el %s.\n", p.Through)
+		fmt.Fprintf(&b, "Solo guías creadas hasta el %s.\n", fechaCorta(p.Through))
 	}
 	switch {
 	case saldoAntes > 0.5:
@@ -184,9 +193,8 @@ func pagoTexto(p settings.VendorPayment, cubre, quedan []skydropx.ShipmentMoney,
 	}
 	if len(cubre) > 0 {
 		lineas, total := porDia(cubre)
-		b.WriteString("\n💵 <b>Envíos que quedan pagados</b> (por día de la guía)\n")
+		fmt.Fprintf(&b, "\n✔️ <b>QUEDA PAGADO: %s</b> · %s\n", formatCOP(total.valor), total.cuenta())
 		b.WriteString(strings.Join(lineas, "\n") + "\n")
-		fmt.Fprintf(&b, "<b>Comisión pagada: %s</b> (%s)\n", formatCOP(total.valor), total.cuenta())
 	} else if len(quedan) == 0 {
 		b.WriteString("\nNo había envíos cobrados pendientes de pagarle: queda como adelanto.\n")
 	} else {
@@ -194,7 +202,7 @@ func pagoTexto(p settings.VendorPayment, cubre, quedan []skydropx.ShipmentMoney,
 	}
 	if len(quedan) > 0 {
 		lineas, total := porDia(quedan)
-		fmt.Fprintf(&b, "\n✅ <b>Aún se le debe: %s</b> (%s, ya cobrados)\n", formatCOP(total.valor), total.cuenta())
+		fmt.Fprintf(&b, "\n✅ <b>AÚN SE LE DEBE: %s</b> · %s ya cobrados\n", formatCOP(total.valor), total.cuenta())
 		b.WriteString(strings.Join(lineas, "\n") + "\n")
 	}
 	saldo := saldoAntes + p.Covered - p.Amount
@@ -231,15 +239,22 @@ func (b *Bot) comandoPagos(ctx context.Context, chatID int64) {
 		return
 	}
 	var sb strings.Builder
-	sb.WriteString("💵 <b>Pagos al vendedor</b> (los más recientes primero)\n")
+	var totalPagado float64
+	for _, p := range pagos {
+		totalPagado += p.Amount
+	}
+	fmt.Fprintf(&sb, "💵 <b>PAGOS AL VENDEDOR</b>\nTotal pagado: <b>%s</b> en %d pago(s)\n\n", formatCOP(totalPagado), len(pagos))
 	for i, n := len(pagos)-1, 0; i >= 0 && n < 15; i, n = i-1, n+1 {
 		p := pagos[i]
-		fmt.Fprintf(&sb, "• %s: <b>%s</b> · cubre %s · %s", p.Date, formatCOP(p.Amount),
-			monto{pedidos: len(p.Trackings), unidades: p.Units}.cuenta(), formatCOP(p.Covered))
-		if p.Through != "" {
-			fmt.Fprintf(&sb, " (guías hasta %s)", p.Through)
+		fmt.Fprintf(&sb, "📅 <b>%s</b> · %s\n", fechaCorta(p.Date), formatCOP(p.Amount))
+		if len(p.Trackings) > 0 {
+			fmt.Fprintf(&sb, "   cubrió %s · %s\n", monto{pedidos: len(p.Trackings), unidades: p.Units}.cuenta(), formatCOP(p.Covered))
+		} else {
+			sb.WriteString("   adelanto, sin envíos cubiertos\n")
 		}
-		sb.WriteString("\n")
+	}
+	if len(pagos) > 15 {
+		sb.WriteString("…\n")
 	}
 	if s := saldoTexto(b.opts.Settings.VendorBalance()); s != "" {
 		sb.WriteString("\n" + s)
