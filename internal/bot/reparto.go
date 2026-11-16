@@ -153,6 +153,7 @@ func (b *Bot) avisoEnRuta(shipmentID, tracking, detalle string) {
 }
 
 // chatsEnRuta son los grupos de gestión y de guías, sin repetir (si no hay grupo de gestión son el mismo).
+// Reciben los avisos en los que cualquiera de los dos puede contactar al cliente.
 func (b *Bot) chatsEnRuta() []int64 {
 	var out []int64
 	visto := map[int64]bool{}

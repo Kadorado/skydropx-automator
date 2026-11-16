@@ -86,6 +86,9 @@ Aquí llega cada guía lista para que se la reenvíes al comprador:
 📦 La orden creada
 ✅ La guía con el número, el enlace de rastreo y el PDF
 🛵 En ruta de entrega → el paquete llega hoy, con el enlace para avisarle al cliente por WhatsApp
+💵 ¡Pagaron! → el paquete se entregó y el cliente pagó
+⚠️ No pudieron entregar · 🏢 Quedó en la oficina · 🚨 Novedad → llama al cliente antes de que el paquete se devuelva
+❌ No se pudo cobrar → el cliente no recibió; trae su teléfono para llamarlo y saber por qué
 
 /guia 240012345678 → ver en qué va un envío, sus últimos eventos y cuánto falta por cobrar
 

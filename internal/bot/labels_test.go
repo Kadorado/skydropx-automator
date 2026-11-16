@@ -403,7 +403,7 @@ func TestAvisosYComisionSoloEnGrupoDeGestion(t *testing.T) {
 		t.Fatalf("la comisión debía quedar en 12000, quedó en %v", got)
 	}
 
-	// El pago y el problema de entrega llegan solo a tu grupo.
+	// El pago y el problema de entrega llegan a los dos grupos (al vendedor, el pago sin lo del saldo).
 	mu.Lock()
 	recibidos = map[int64][]string{}
 	mu.Unlock()
@@ -411,8 +411,9 @@ func TestAvisosYComisionSoloEnGrupoDeGestion(t *testing.T) {
 	b.avisoIncidencia("s2", "delivery_attempt", "G2", "Destinatario ausente", "")
 	mu.Lock()
 	defer mu.Unlock()
-	if len(recibidos[-100]) != 0 {
-		t.Fatalf("el grupo del vendedor no debe recibir estos avisos: %q", recibidos[-100])
+	if len(recibidos[-100]) != 2 || !strings.Contains(recibidos[-100][0], "Pagaron") || strings.Contains(recibidos[-100][0], "saldo disponible") ||
+		!strings.Contains(recibidos[-100][1], "No pudieron entregar") {
+		t.Fatalf("el grupo del vendedor debía recibir el pago (sin lo del saldo) y el problema de entrega: %q", recibidos[-100])
 	}
 	if len(recibidos[-200]) != 2 || !strings.Contains(recibidos[-200][0], "Pagaron") || !strings.Contains(recibidos[-200][1], "No pudieron entregar") {
 		t.Fatalf("tu grupo debía recibir el pago y el problema de entrega: %q", recibidos[-200])

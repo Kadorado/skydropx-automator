@@ -32,6 +32,19 @@ func TestMarcarCobroNoAvisaDosVeces(t *testing.T) {
 
 func TestCobroMensaje(t *testing.T) {
 	e := skydropx.CODShipment{Tracking: "240065822548", Customer: "Aracely cedeño macias", Status: "collected", Cost: 16532}
+	if v := cobroMensajeVendedor(e, 136532, 120000); strings.Contains(v, "saldo disponible") || !strings.Contains(v, "¡Pagaron!") ||
+		!strings.Contains(v, "el cliente pagó") {
+		t.Errorf("aviso al vendedor:\n%s", v)
+	}
+	f := e
+	f.Status, f.Phone, f.City = "failed", "3001234567", "Montería"
+	if v := cobroMensajeVendedor(f, 136532, 120000); !strings.Contains(v, "No se pudo cobrar") || !strings.Contains(v, "3001234567") ||
+		!strings.Contains(v, "Montería") || !strings.Contains(v, "Llama al cliente") || strings.Contains(v, "cargo por la devolución") {
+		t.Errorf("cobro fallido al vendedor:\n%s", v)
+	}
+	if m := cobroMensaje(f, 136532, 120000); !strings.Contains(m, "3001234567") || !strings.Contains(m, "cargo por la devolución") {
+		t.Errorf("cobro fallido a gestión:\n%s", m)
+	}
 	msg := cobroMensaje(e, 136532, 120000)
 	for _, want := range []string{"¡Pagaron!", "Aracely cedeño macias", "240065822548", "$136.532", "producto $120.000 + envío $16.532"} {
 		if !strings.Contains(msg, want) {

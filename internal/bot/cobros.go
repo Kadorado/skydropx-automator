@@ -17,6 +17,7 @@ import (
 
 // avisoEntrega avisa el pago en cuanto Skydropx reporta la entrega del paquete (estado "collected"),
 // o que no se pudo cobrar si va en devolución ("failed"). No repite el aviso si ya se dio.
+// Los dos avisos llegan también al grupo de guías del vendedor, sin lo que solo le sirve al dueño.
 func (b *Bot) avisoEntrega(shipmentID, tracking, estado string) {
 	if shipmentID == "" {
 		return
@@ -56,6 +57,37 @@ func (b *Bot) avisoEntrega(shipmentID, tracking, estado string) {
 	for _, id := range b.gestionChats() {
 		b.say(ctx, id, msg)
 	}
+	msgVendedor := cobroMensajeVendedor(e, pays, product)
+	for _, id := range b.opts.AdminChatIDs {
+		if !b.isGestion(id) {
+			b.say(ctx, id, msgVendedor)
+		}
+	}
+}
+
+// cobroMensajeVendedor es el aviso para el grupo del vendedor: sin lo del saldo de Skydropx ni el
+// costo de la devolución, y si no se pudo cobrar, con lo que tiene que hacer.
+func cobroMensajeVendedor(e skydropx.CODShipment, pays, product float64) string {
+	msg := cobroMensaje(e, pays, product)
+	if i := strings.LastIndex(msg, "\n\n"); i >= 0 {
+		msg = msg[:i]
+	}
+	if e.Status == "failed" {
+		return msg + "\n\n📞 Llama al cliente para saber por qué no lo recibió; si todavía lo quiere, avísanos antes de que el paquete regrese."
+	}
+	return msg + "\n\n✅ El paquete se entregó y el cliente pagó."
+}
+
+// contactoCliente son las líneas de teléfono y ciudad del cliente ("" si no se conocen).
+func contactoCliente(e skydropx.CODShipment) string {
+	var b strings.Builder
+	if e.Phone != "" {
+		fmt.Fprintf(&b, "📞 <b>Teléfono:</b> %s\n", html.EscapeString(e.Phone))
+	}
+	if e.City != "" {
+		fmt.Fprintf(&b, "📍 <b>Ciudad:</b> %s\n", html.EscapeString(e.City))
+	}
+	return b.String()
 }
 
 // cobroMensaje arma el aviso de un pago recibido o de un cobro que no se pudo hacer.
@@ -69,9 +101,9 @@ func cobroMensaje(e skydropx.CODShipment, pays, product float64) string {
 		detalle = fmt.Sprintf("producto %s + envío %s", formatCOP(product), formatCOP(pays-product))
 	}
 	if e.Status == "failed" {
-		return fmt.Sprintf("❌ <b>No se pudo cobrar</b>\n\n👤 <b>Cliente:</b> %s\n📦 <b>Guía:</b> %s\n"+
+		return fmt.Sprintf("❌ <b>No se pudo cobrar</b>\n\n👤 <b>Cliente:</b> %s\n%s📦 <b>Guía:</b> %s\n"+
 			"💸 <b>No se recaudó:</b> %s (%s)\n\nEl envío (%s) ya estaba pagado y puede llegar un cargo por la devolución.",
-			cliente, html.EscapeString(e.Tracking), formatCOP(pays), detalle, formatCOP(e.Cost))
+			cliente, contactoCliente(e), html.EscapeString(e.Tracking), formatCOP(pays), detalle, formatCOP(e.Cost))
 	}
 	return fmt.Sprintf("💵 <b>¡Pagaron!</b>\n\n👤 <b>Cliente:</b> %s\n📦 <b>Guía:</b> %s\n"+
 		"💰 <b>Pagó:</b> %s (%s)\n\nEl paquete se entregó y lo cobrado llega a tu saldo disponible de Skydropx.",
@@ -107,7 +139,11 @@ func (b *Bot) avisoIncidencia(shipmentID, status, tracking, detalle, trackingURL
 		e.Tracking = tracking
 	}
 	msg := incidenciaMensaje(e, status, detalle, trackingURL)
-	for _, id := range b.gestionChats() {
+	chats := b.gestionChats()
+	if status != "picked_up" {
+		chats = b.chatsEnRuta() // los problemas de entrega también al vendedor, para que llame al cliente a tiempo
+	}
+	for _, id := range chats {
 		b.say(ctx, id, msg)
 	}
 }
