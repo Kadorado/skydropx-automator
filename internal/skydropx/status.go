@@ -10,14 +10,17 @@ import (
 
 // Status es el estado logístico y de cobro de un envío, calculado desde su último evento de rastreo.
 type Status struct {
-	Key        string       `json:"key"`        // en_camino | entregado | intento_entrega | creado | en_proceso | cancelado | sin_guia | sin_estado
-	Label      string       `json:"label"`      // texto para la pantalla
-	LastEvent  string       `json:"last_event"` // descripción del último evento
-	LastDate   string       `json:"last_date"`  // fecha del último evento (ISO)
-	Cobro      string       `json:"cobro"`      // cobrado | por_cobrar | no_aplica
-	CobroLabel string       `json:"cobro_label"`
-	Raw        string       `json:"raw,omitempty"` // estado técnico del último evento (delivery_attempt, in_return…)
-	History    []TrackEvent `json:"-"`             // últimos eventos de rastreo, del más nuevo al más antiguo
+	Key        string `json:"key"`        // en_camino | entregado | intento_entrega | creado | en_proceso | cancelado | sin_guia | sin_estado
+	Label      string `json:"label"`      // texto para la pantalla
+	LastEvent  string `json:"last_event"` // descripción del último evento
+	LastDate   string `json:"last_date"`  // fecha del último evento (ISO)
+	Cobro      string `json:"cobro"`      // cobrado | por_cobrar | no_aplica
+	CobroLabel string `json:"cobro_label"`
+	Raw        string `json:"raw,omitempty"` // estado técnico del último evento (delivery_attempt, in_return…)
+	// Días que el paquete esperó en la oficina de la transportadora hasta que el cliente lo recogió
+	// (0 si no pasó por oficina o no se ha recogido).
+	DiasEnOficina int          `json:"dias_en_oficina,omitempty"`
+	History       []TrackEvent `json:"-"` // últimos eventos de rastreo, del más nuevo al más antiguo
 }
 
 // TrackEvent es un evento de rastreo de la transportadora.
@@ -146,6 +149,7 @@ func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (
 	var history []TrackEvent
 	var (
 		lastAt, stAt, delAt time.Time
+		branchAt            time.Time // primera vez que quedó en oficina
 		lastDesc, lastDate  string
 		stStatus            string
 		delivered           bool
@@ -158,6 +162,9 @@ func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (
 		history = append(history, TrackEvent{Date: t, Description: ev.Attributes.Description, Status: ev.Attributes.Status})
 		if lastAt.IsZero() || t.After(lastAt) {
 			lastAt, lastDesc, lastDate = t, ev.Attributes.Description, ev.Attributes.Date
+		}
+		if ev.Attributes.Status == "delivered_to_branch" && (branchAt.IsZero() || t.Before(branchAt)) {
+			branchAt = t
 		}
 		if ev.Attributes.Status == "delivered" && (delAt.IsZero() || t.After(delAt)) {
 			delivered, delAt = true, t
@@ -173,6 +180,9 @@ func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (
 		history = history[:maxHistory]
 	}
 	st := Status{LastEvent: lastDesc, LastDate: lastDate, Key: "creado", Label: "Creado", Raw: stStatus, History: history}
+	if delivered && !branchAt.IsZero() && delAt.After(branchAt) {
+		st.DiasEnOficina = int(delAt.Sub(branchAt).Hours() / 24)
+	}
 	if delivered {
 		st.Raw = "delivered"
 		st.Key, st.Label = "entregado", "Entregado"

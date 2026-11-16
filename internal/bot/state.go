@@ -24,6 +24,11 @@ type Pending struct {
 	Data           *domain.ShipmentData `json:"data,omitempty"`
 	Quote          *skydropx.LabelQuote `json:"quote,omitempty"`
 	LabelRequested bool                 `json:"label_requested,omitempty"`
+
+	// Advertencia es el historial del cliente (no pagó o tardó en recoger) que va arriba de la orden;
+	// con advertencia, generar la guía pide confirmación (HistorialAceptado).
+	Advertencia       string `json:"advertencia,omitempty"`
+	HistorialAceptado bool   `json:"historial_aceptado,omitempty"`
 }
 
 // Recent es una orden creada hace poco, para detectar pedidos repetidos.

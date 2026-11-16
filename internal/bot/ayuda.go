@@ -24,6 +24,7 @@ Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
 📋 <b>NOVEDADES PARA GESTIONAR</b>
 /novedades → envíos de los últimos 45 días que hay que gestionar con el cliente: en devolución o sin cobrar, intentos de entrega fallidos, en oficina y con novedad. Trae teléfono, ciudad, guía y último evento.
 /guia 240012345678 → estado de esa guía, últimos eventos y cuánto falta por cobrar
+/cliente 1234567890 → historial de un cliente por cédula o teléfono: qué pagó, qué devolvió y si tardó en recoger en oficina
 
 🤝 <b>COMISIÓN DEL VENDEDOR</b>
 /deuda → lo que se le debe en los últimos 7 días, día por día
@@ -43,6 +44,7 @@ Las ventas anteriores conservan el valor de su momento.
 
 🔔 <b>AVISOS AUTOMÁTICOS</b>
 📦 Orden nueva → con el botón 🚚 para generar la guía
+⚠️ Si el cliente ya no pagó o tardó 3 días o más en recoger en oficina, la orden llega con advertencia y hay que confirmar antes de generar la guía
 🚚 La transportadora recibió el paquete → ya va en camino
 🛵 En ruta de entrega → llega hoy, con el enlace para avisarle al cliente por WhatsApp
 💵 ¡Pagaron! → el paquete se entregó y el cliente pagó
@@ -76,7 +78,10 @@ Valor: 60000</code>
 📦 La orden creada
 ✅ La guía lista, con el número, el rastreo y el PDF para enviarle al cliente
 
+⚠️ Si el cliente ya no pagó o tardó en recoger en oficina antes, te aviso al crear el pedido
+
 /guia 240012345678 → ver en qué va un envío
+/cliente 1234567890 → ver el historial de un cliente (cédula o teléfono) antes de venderle
 /ayuda → ver esta ayuda`
 
 // ayudaGrupoGuias es la ayuda del grupo donde el vendedor recibe las guías (no crea pedidos ahí).
@@ -91,6 +96,7 @@ Aquí llega cada guía lista para que se la reenvíes al comprador:
 ❌ No se pudo cobrar → el cliente no recibió; trae su teléfono para llamarlo y saber por qué
 
 /guia 240012345678 → ver en qué va un envío, sus últimos eventos y cuánto falta por cobrar
+/cliente 1234567890 → historial de un cliente por cédula o teléfono
 
 🛒 Los pedidos se crean escribiéndole al bot por chat privado, con los datos del cliente.
 
@@ -101,6 +107,7 @@ var (
 	comandosGestion = []telegram.Command{
 		{Command: "novedades", Description: "Envíos para gestionar: devoluciones, intentos fallidos, oficina"},
 		{Command: "guia", Description: "Estado de una guía (/guia 240012345678)"},
+		{Command: "cliente", Description: "Historial de un cliente por cédula o teléfono"},
 		{Command: "resumen", Description: "Resumen de hoy y del mes (/resumen semana: la anterior)"},
 		{Command: "imprimir", Description: "Guías de hoy en hojas de 4 (/imprimir 3: últimos 3 días)"},
 		{Command: "deuda", Description: "Lo que se le debe al vendedor (/deuda 3, semana, mes o fechas)"},
@@ -112,10 +119,12 @@ var (
 	}
 	comandosVendedor = []telegram.Command{
 		{Command: "guia", Description: "Ver en qué va un envío (/guia 240012345678)"},
+		{Command: "cliente", Description: "Historial de un cliente (/cliente 1234567890)"},
 		{Command: "ayuda", Description: "Cómo enviar un pedido"},
 	}
 	comandosGrupoGuias = []telegram.Command{
 		{Command: "guia", Description: "Ver en qué va un envío (/guia 240012345678)"},
+		{Command: "cliente", Description: "Historial de un cliente (/cliente 1234567890)"},
 		{Command: "ayuda", Description: "Qué llega a este grupo"},
 	}
 )

@@ -116,6 +116,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			b.comandoNovedades(ctx, chatID)
 			return
 		}
+		if strings.HasPrefix(text, "/cliente") {
+			b.comandoCliente(ctx, chatID, text)
+			return
+		}
 		if strings.HasPrefix(text, "/guia") {
 			b.comandoGuia(ctx, chatID, text)
 			return
@@ -130,6 +134,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 	}
 	// El grupo de guías (TELEGRAM_ADMIN_CHAT_IDS) recibe órdenes y guías, pero ahí no se crean pedidos.
 	if !b.isAllowed(chatID) && b.isAdmin(chatID) {
+		if strings.HasPrefix(text, "/cliente") {
+			b.comandoCliente(ctx, chatID, text)
+			return
+		}
 		if strings.HasPrefix(text, "/guia") {
 			b.comandoGuia(ctx, chatID, text)
 			return
@@ -153,6 +161,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 	}
 	if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
 		b.say(ctx, chatID, ayudaVendedor)
+		return
+	}
+	if strings.HasPrefix(text, "/cliente") {
+		b.comandoCliente(ctx, chatID, text)
 		return
 	}
 	if strings.HasPrefix(text, "/guia") {
@@ -271,14 +283,22 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 		return
 	}
 
+	// El historial del cliente en Skydropx (no pagó o tardó en recoger) se avisa con la orden.
+	hist, err := b.revisarCliente(ctx, data.Documento, data.Telefono)
+	if err != nil {
+		log.Printf("bot: no se pudo revisar el historial del cliente: %v", err)
+	}
+	advertencia := advertenciaGestion(hist)
+
 	if err := b.st.add(Pending{
-		OrderID:   res.ID,
-		ChatID:    chatID,
-		Nombre:    data.Nombre,
-		Destino:   fmt.Sprintf("%s, %s", data.Ciudad, data.Departamento),
-		CreatedAt: time.Now(),
-		Sender:    senderOrChat(sender, chatID),
-		Data:      &data,
+		Advertencia: advertencia,
+		OrderID:     res.ID,
+		ChatID:      chatID,
+		Nombre:      data.Nombre,
+		Destino:     fmt.Sprintf("%s, %s", data.Ciudad, data.Departamento),
+		CreatedAt:   time.Now(),
+		Sender:      senderOrChat(sender, chatID),
+		Data:        &data,
 	}); err != nil {
 		log.Printf("bot: no se pudo guardar la orden pendiente %s: %v", res.ID, err)
 	}
@@ -291,11 +311,12 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 		html.EscapeString(data.Nombre), html.EscapeString(data.Ciudad), html.EscapeString(data.Departamento),
 		formatCOP(data.ValorUnitario), b.guiaDestino(),
 	)
+	msg += advertenciaVendedor(hist)
 	if res.IsMock {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
 	}
 	b.say(ctx, chatID, msg)
-	b.notifyAdmins(ctx, senderOrChat(sender, chatID), data, res.ID, res.IsMock)
+	b.notifyAdmins(ctx, senderOrChat(sender, chatID), data, res.ID, res.IsMock, advertencia, advertenciaVendedor(hist))
 }
 
 func senderOrChat(sender string, chatID int64) string {
@@ -307,8 +328,10 @@ func senderOrChat(sender string, chatID int64) string {
 
 // notifyAdmins avisa la orden nueva: al grupo de gestión con el botón para generar la guía
 // y al grupo del vendedor (TELEGRAM_ADMIN_CHAT_IDS) solo como aviso.
-func (b *Bot) notifyAdmins(ctx context.Context, sender string, data domain.ShipmentData, orderID string, isMock bool) {
-	msg := adminOrderText(sender, data)
+// advertencia va arriba del aviso de gestión; vendedor, al final del aviso del grupo del vendedor.
+func (b *Bot) notifyAdmins(ctx context.Context, sender string, data domain.ShipmentData, orderID string, isMock bool, advertencia, vendedor string) {
+	msg := advertencia + adminOrderText(sender, data)
+	msgVendedor := adminOrderText(sender, data) + vendedor
 	var buttons [][]telegram.Button
 	if isMock {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
@@ -325,7 +348,7 @@ func (b *Bot) notifyAdmins(ctx context.Context, sender string, data domain.Shipm
 		if b.isGestion(id) {
 			continue // ya recibió el aviso con botones
 		}
-		b.say(ctx, id, msg+"\n\n📄 La guía llegará aquí cuando esté lista.")
+		b.say(ctx, id, msgVendedor+"\n\n📄 La guía llegará aquí cuando esté lista.")
 	}
 }
 

@@ -322,7 +322,7 @@ func TestOrdenNuevaLlegaAAmbosGruposYBotonSoloAGestion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.notifyAdmins(context.Background(), "Vendedor", domain.ShipmentData{Nombre: "Cliente"}, "orden-9", false)
+	b.notifyAdmins(context.Background(), "Vendedor", domain.ShipmentData{Nombre: "Cliente"}, "orden-9", false, "", "")
 
 	if got, ok := enviados[-200]; !ok || got != "g:orden-9" {
 		t.Fatalf("tu grupo debe recibir la orden con el botón, recibió %q (ok=%v)", got, ok)

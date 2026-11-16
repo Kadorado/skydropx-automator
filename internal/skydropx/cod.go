@@ -9,11 +9,13 @@ import (
 // CODShipment es el estado del cobro contra entrega de un envío con guía.
 type CODShipment struct {
 	ID       string
+	Date     string // creación de la guía (RFC 3339)
 	Tracking string
 	Carrier  string
 	Customer string
 	Phone    string
 	City     string
+	TaxID    string // cédula del destinatario
 	OrderID  string
 	Status   string  // pending | collected | failed | cancelled | vacío
 	Reported float64 // monto de contra entrega que reporta Skydropx (a veces con el envío, a veces sin él)
@@ -37,7 +39,8 @@ func (c *Client) CODShipments(ctx context.Context) ([]CODShipment, error) {
 			status = "cancelled"
 		}
 		out = append(out, CODShipment{
-			ID: s.ID, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Phone: s.Phone, City: s.City, OrderID: s.OrderID,
+			ID: s.ID, Date: s.Date, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Phone: s.Phone, City: s.City,
+			TaxID: s.TaxID, OrderID: s.OrderID,
 			Status: status, Reported: s.CODAmount, Cost: s.Cost,
 		})
 	}
@@ -85,7 +88,8 @@ func (c *Client) Problemas(ctx context.Context, since time.Time) ([]Problema, in
 			continue
 		}
 		pr := Problema{CODShipment: CODShipment{
-			ID: s.ID, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Phone: s.Phone, City: s.City, OrderID: s.OrderID,
+			ID: s.ID, Date: s.Date, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Phone: s.Phone, City: s.City,
+			TaxID: s.TaxID, OrderID: s.OrderID,
 			Status: s.OnDelivery, Reported: s.CODAmount, Cost: s.Cost,
 		}}
 		revisados++

@@ -21,6 +21,7 @@ const (
 	actGenerar   = "g"
 	actConfirmar = "c"
 	actCancelar  = "x"
+	actForzar    = "f" // generar la guía aunque el cliente tenga historial
 )
 
 func botonGenerar(orderID string) [][]telegram.Button {
@@ -39,6 +40,11 @@ func adminOrderText(sender string, data domain.ShipmentData) string {
 		html.EscapeString(data.Ciudad), html.EscapeString(data.Departamento), html.EscapeString(data.Direccion),
 		qty, formatCOP(data.ValorUnitario*float64(qty)),
 	)
+}
+
+// textoOrden es el aviso de la orden en el grupo de gestión, con la advertencia del cliente arriba.
+func textoOrden(p Pending) string {
+	return p.Advertencia + adminOrderText(p.Sender, *p.Data)
 }
 
 // handleCallback atiende los botones de generar, confirmar y cancelar la guía.
@@ -66,6 +72,21 @@ func (b *Bot) handleCallback(ctx context.Context, cq *telegram.CallbackQuery) {
 
 	switch action {
 	case actGenerar:
+		if p.Advertencia != "" && !p.HistorialAceptado && !p.LabelRequested {
+			_ = b.tg.AnswerCallback(ctx, cq.ID, "Este cliente tiene historial.")
+			_ = b.tg.EditMessage(ctx, chatID, msgID, textoOrden(p)+"\n\n⚠️ <b>¿Generar la guía igual?</b> Este cliente no pagó o tardó en recoger antes.",
+				[][]telegram.Button{telegram.Row(
+					telegram.Button{Text: "⚠️ Generar de todas formas", Data: actForzar + ":" + orderID},
+					telegram.Button{Text: "✋ No generar", Data: actCancelar + ":" + orderID},
+				)})
+			return
+		}
+		b.cotizarGuia(ctx, cq.ID, chatID, msgID, p)
+	case actForzar:
+		if _, err := b.st.updatePending(orderID, func(p *Pending) { p.HistorialAceptado = true }); err != nil {
+			log.Printf("bot: no se pudo guardar la orden %s: %v", orderID, err)
+		}
+		p.HistorialAceptado = true
 		b.cotizarGuia(ctx, cq.ID, chatID, msgID, p)
 	case actConfirmar:
 		b.confirmarGuia(ctx, cq.ID, chatID, msgID, p)
@@ -74,7 +95,7 @@ func (b *Bot) handleCallback(ctx context.Context, cq *telegram.CallbackQuery) {
 		if _, err := b.st.updatePending(orderID, func(p *Pending) { p.Quote = nil }); err != nil {
 			log.Printf("bot: no se pudo guardar la orden %s: %v", orderID, err)
 		}
-		_ = b.tg.EditMessage(ctx, chatID, msgID, adminOrderText(p.Sender, *p.Data), botonGenerar(orderID))
+		_ = b.tg.EditMessage(ctx, chatID, msgID, textoOrden(p), botonGenerar(orderID))
 	default:
 		_ = b.tg.AnswerCallback(ctx, cq.ID, "")
 	}
@@ -87,7 +108,7 @@ func (b *Bot) cotizarGuia(ctx context.Context, callbackID string, chatID, msgID 
 		return
 	}
 	_ = b.tg.AnswerCallback(ctx, callbackID, "Cotizando…")
-	base := adminOrderText(p.Sender, *p.Data)
+	base := textoOrden(p)
 	_ = b.tg.EditMessage(ctx, chatID, msgID, base+"\n\n⏳ Cotizando con Interrapidísimo…", nil)
 
 	qctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -189,7 +210,7 @@ func (b *Bot) confirmarGuia(ctx context.Context, callbackID string, chatID, msgI
 		return
 	}
 	_ = b.tg.AnswerCallback(ctx, callbackID, "Generando la guía…")
-	base := adminOrderText(p.Sender, *p.Data)
+	base := textoOrden(p)
 	_ = b.tg.EditMessage(ctx, chatID, msgID, base+"\n\n⏳ Generando la guía con Interrapidísimo…", nil)
 
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)

@@ -337,6 +337,7 @@ type financeShipment struct {
 	Customer   string
 	Phone      string
 	City       string
+	TaxID      string // cédula del destinatario
 	OrderID    string
 	Cancelled  bool
 	NoLabel    bool    // no tiene número de guía: falló o no se generó, no se pagó
@@ -367,7 +368,7 @@ func orderUnits(qty map[string]int, orderID string) (units int, known bool) {
 
 // financeShipments toma los envíos creados dentro del periodo.
 func financeShipments(list ShipmentList, p Period) []financeShipment {
-	type contact struct{ name, phone, city string }
+	type contact struct{ name, phone, city, taxID string }
 	contacts := map[string]contact{} // id de la dirección -> datos del destinatario
 	for _, raw := range list.Included {
 		var inc struct {
@@ -377,10 +378,11 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 				Name  string `json:"name"`
 				Phone string `json:"phone"`
 				City  string `json:"area_level2"`
+				TaxID string `json:"tax_id_number"`
 			} `json:"attributes"`
 		}
 		if json.Unmarshal(raw, &inc) == nil && inc.Type == "address" {
-			contacts[inc.ID] = contact{inc.Attributes.Name, inc.Attributes.Phone, inc.Attributes.City}
+			contacts[inc.ID] = contact{inc.Attributes.Name, inc.Attributes.Phone, inc.Attributes.City, inc.Attributes.TaxID}
 		}
 	}
 	var out []financeShipment
@@ -424,6 +426,7 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 			Customer:   to.name,
 			Phone:      to.phone,
 			City:       to.city,
+			TaxID:      to.taxID,
 			OrderID:    s.Attributes.OrderID,
 			Cancelled:  s.Attributes.WorkflowStatus == "cancelled",
 			NoLabel:    strings.TrimSpace(s.Attributes.Tracking) == "",
