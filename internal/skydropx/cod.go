@@ -10,6 +10,7 @@ import (
 type CODShipment struct {
 	ID       string
 	Tracking string
+	Carrier  string
 	Customer string
 	Phone    string
 	City     string
@@ -36,7 +37,7 @@ func (c *Client) CODShipments(ctx context.Context) ([]CODShipment, error) {
 			status = "cancelled"
 		}
 		out = append(out, CODShipment{
-			ID: s.ID, Tracking: s.Tracking, Customer: s.Customer, Phone: s.Phone, City: s.City, OrderID: s.OrderID,
+			ID: s.ID, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Phone: s.Phone, City: s.City, OrderID: s.OrderID,
 			Status: status, Reported: s.CODAmount, Cost: s.Cost,
 		})
 	}
@@ -84,7 +85,7 @@ func (c *Client) Problemas(ctx context.Context, since time.Time) ([]Problema, in
 			continue
 		}
 		pr := Problema{CODShipment: CODShipment{
-			ID: s.ID, Tracking: s.Tracking, Customer: s.Customer, Phone: s.Phone, City: s.City, OrderID: s.OrderID,
+			ID: s.ID, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Phone: s.Phone, City: s.City, OrderID: s.OrderID,
 			Status: s.OnDelivery, Reported: s.CODAmount, Cost: s.Cost,
 		}}
 		revisados++

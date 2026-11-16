@@ -50,6 +50,8 @@ func (b *Bot) WebhookHandler(secret, header string) http.HandlerFunc {
 			go b.avisoEntrega(shipmentID, ev.Data.Attributes.Tracking, "collected")
 		case "in_return":
 			go b.avisoEntrega(shipmentID, ev.Data.Attributes.Tracking, "failed")
+		case "last_mile":
+			go b.avisoEnRuta(shipmentID, ev.Data.Attributes.Tracking, ev.Data.Attributes.EventDescription)
 		case "picked_up", "delivery_attempt", "exception", "delivered_to_branch":
 			go b.avisoIncidencia(shipmentID, ev.Data.Attributes.Status, ev.Data.Attributes.Tracking,
 				ev.Data.Attributes.EventDescription, ev.Data.Attributes.TrackingURL)

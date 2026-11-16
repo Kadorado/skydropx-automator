@@ -99,16 +99,9 @@ func (b *Bot) avisoIncidencia(shipmentID, status, tracking, detalle, trackingURL
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	e := skydropx.CODShipment{ID: shipmentID, Tracking: tracking}
-	envios, err := b.sky.CODShipments(ctx)
+	e, _, err := b.buscarEnvio(ctx, shipmentID, "")
 	if errors.Is(err, skydropx.ErrMockMode) {
 		return
-	}
-	for _, x := range envios {
-		if x.ID == shipmentID {
-			e = x
-			break
-		}
 	}
 	if e.Tracking == "" {
 		e.Tracking = tracking

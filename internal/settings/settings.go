@@ -20,12 +20,42 @@ type CommissionRate struct {
 	Value float64 `json:"value"`
 }
 
+// VendorPayment es un pago de comisión al vendedor. Cubre los envíos ya cobrados que se marcaron al
+// registrarlo; la diferencia entre lo pagado y lo que cubre queda como saldo.
+type VendorPayment struct {
+	Date      string   `json:"date"`              // día en que se registró el pago (AAAA-MM-DD)
+	Amount    float64  `json:"amount"`            // lo que se le pagó
+	Covered   float64  `json:"covered"`           // comisión de los envíos que cubre
+	Units     int      `json:"units"`             // datáfonos de esos envíos
+	Through   string   `json:"through,omitempty"` // cubre guías creadas hasta este día (vacío = todas las cobradas)
+	Trackings []string `json:"trackings"`         // guías que cubre
+}
+
+// AdExpense es un gasto de publicidad que se reparte mitad y mitad con el vendedor.
+type AdExpense struct {
+	Date   string  `json:"date"`           // día del gasto (AAAA-MM-DD)
+	Amount float64 `json:"amount"`         // lo que costó en total
+	PaidBy string  `json:"paid_by"`        // "yo" (el dueño: el vendedor debe la mitad) o "vendedor" (se le debe la mitad)
+	Note   string  `json:"note,omitempty"` // para qué fue (Facebook, TikTok…)
+}
+
+// VendorShare es lo que la publicidad le suma a lo que se le debe al vendedor: +la mitad si la pagó él,
+// -la mitad si la pagó el dueño.
+func (a AdExpense) VendorShare() float64 {
+	if a.PaidBy == "vendedor" {
+		return a.Amount / 2
+	}
+	return -a.Amount / 2
+}
+
 // Store es el archivo de ajustes. Es seguro usarlo desde varias goroutines.
 type Store struct {
 	mu         sync.Mutex
 	path       string
 	fallback   float64          // comisión antes del primer cambio (COMISION_POR_DATAFONO)
 	Commission []CommissionRate `json:"commission"`
+	Payments   []VendorPayment  `json:"vendor_payments"`
+	Ads        []AdExpense      `json:"ads"`
 }
 
 // Load lee los ajustes de path; si el archivo no existe, empieza vacío.
@@ -95,6 +125,99 @@ func (s *Store) SetCommission(value float64, from string) (CommissionRate, error
 	sort.Slice(s.Commission, func(i, j int) bool { return s.Commission[i].From < s.Commission[j].From })
 	s.mu.Unlock()
 	return r, s.save()
+}
+
+// AddVendorPayment registra un pago al vendedor.
+func (s *Store) AddVendorPayment(p VendorPayment) error {
+	if p.Amount < 0 || p.Amount > 1_000_000_000 {
+		return fmt.Errorf("valor de pago inválido: %.0f", p.Amount)
+	}
+	s.mu.Lock()
+	s.Payments = append(s.Payments, p)
+	s.mu.Unlock()
+	return s.save()
+}
+
+// RemoveLastVendorPayment borra el último pago registrado (para corregir un error). ok es false si no hay.
+func (s *Store) RemoveLastVendorPayment() (p VendorPayment, ok bool, err error) {
+	s.mu.Lock()
+	if len(s.Payments) == 0 {
+		s.mu.Unlock()
+		return p, false, nil
+	}
+	p = s.Payments[len(s.Payments)-1]
+	s.Payments = s.Payments[:len(s.Payments)-1]
+	s.mu.Unlock()
+	return p, true, s.save()
+}
+
+// VendorPayments devuelve los pagos al vendedor, del más antiguo al más nuevo.
+func (s *Store) VendorPayments() []VendorPayment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]VendorPayment(nil), s.Payments...)
+}
+
+// PaidTrackings son las guías que ya se le pagaron al vendedor, con el día del pago.
+func (s *Store) PaidTrackings() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]string{}
+	for _, p := range s.Payments {
+		for _, t := range p.Trackings {
+			out[t] = p.Date
+		}
+	}
+	return out
+}
+
+// VendorBalance es lo que quedó de los pagos y la publicidad compartida: positivo si se le sigue
+// debiendo al vendedor, negativo si él le debe al dueño (se descuenta de su próxima comisión).
+func (s *Store) VendorBalance() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var b float64
+	for _, p := range s.Payments {
+		b += p.Covered - p.Amount
+	}
+	for _, a := range s.Ads {
+		b += a.VendorShare()
+	}
+	return b
+}
+
+// AddAd registra un gasto de publicidad compartido.
+func (s *Store) AddAd(a AdExpense) error {
+	if a.Amount <= 0 || a.Amount > 1_000_000_000 {
+		return fmt.Errorf("valor de publicidad inválido: %.0f", a.Amount)
+	}
+	if a.PaidBy != "vendedor" {
+		a.PaidBy = "yo"
+	}
+	s.mu.Lock()
+	s.Ads = append(s.Ads, a)
+	s.mu.Unlock()
+	return s.save()
+}
+
+// RemoveLastAd borra el último gasto de publicidad registrado. ok es false si no hay.
+func (s *Store) RemoveLastAd() (a AdExpense, ok bool, err error) {
+	s.mu.Lock()
+	if len(s.Ads) == 0 {
+		s.mu.Unlock()
+		return a, false, nil
+	}
+	a = s.Ads[len(s.Ads)-1]
+	s.Ads = s.Ads[:len(s.Ads)-1]
+	s.mu.Unlock()
+	return a, true, s.save()
+}
+
+// AdExpenses devuelve los gastos de publicidad, en el orden en que se registraron.
+func (s *Store) AdExpenses() []AdExpense {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]AdExpense(nil), s.Ads...)
 }
 
 // save escribe el archivo de forma atómica (temporal + renombrado).

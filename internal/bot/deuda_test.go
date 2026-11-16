@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"skydropx-automator/internal/settings"
 	"skydropx-automator/internal/skydropx"
 )
 
@@ -43,27 +44,36 @@ func TestDeudaTexto(t *testing.T) {
 	f := skydropx.Finance{
 		PerShipment: []skydropx.ShipmentMoney{
 			{Date: "2026-11-14T10:00:00-05:00", Tracking: "A", Status: "pending", Units: 1, Commission: 12000},
-			{Date: "2026-11-14T11:00:00-05:00", Tracking: "B", Status: "pending", Units: 2, Commission: 24000},
-			{Date: "2026-11-13T22:00:00-05:00", Tracking: "C", Status: "collected", Units: 2, Commission: 24000},
+			{Date: "2026-11-14T11:00:00-05:00", Tracking: "B", Customer: "Ana Ruiz", Status: "pending", Units: 2, Commission: 24000},
+			{Date: "2026-11-13T22:00:00-05:00", Tracking: "C", Customer: "Luis Gómez", Status: "collected", Units: 2, Commission: 24000},
 			{Date: "2026-11-13T09:00:00-05:00", Tracking: "D", Status: "collected", Units: 1, Commission: 12000},
+			{Date: "2026-11-12T08:00:00-05:00", Tracking: "H", Status: "collected", Units: 1, Commission: 12000},
 			{Date: "2026-11-13T09:00:00-05:00", Tracking: "E", Status: "pending", Units: 1, Commission: 12000},
 			{Date: "2026-11-12T09:00:00-05:00", Tracking: "F", Status: "failed", Units: 1, Commission: 12000},
 			{Date: "2026-11-12T09:00:00-05:00", Tracking: "G", Status: "cancelled"},
 		},
 	}
 	estados := map[string]string{"A": "camino", "B": "oficina", "E": "novedad"}
-	msg := deudaTexto(d, h, f, estados)
+	msg := deudaTexto(d, h, f, estados, cuentaVendedor{
+		pagadas: map[string]string{"H": "2026-11-13"},
+		ads:     []settings.AdExpense{{Date: "2026-11-13", Amount: 40000, PaidBy: "yo"}, {Date: "2026-11-01", Amount: 99000}},
+		saldo:   6000,
+	})
 	for _, want := range []string{"Del 12 nov al 14 nov",
-		"sáb 14 nov</b>: 🚚 $12.000 (1) · 🏢 $24.000 (2)",
-		"vie 13 nov</b>: ✅ $36.000 (3) · ⚠️ $12.000 (1)",
-		"jue 12 nov</b>: ❌ 1 sin cobrar",
-		"Acumulado en esos días: $84.000</b> (7 datáfonos)",
-		"Se le debe: $36.000", "En camino: $12.000 (1 datáfono)", "En oficina: $24.000 (2 datáfonos)", "Con novedad: $12.000"} {
+		"sáb 14 nov</b> · 2 pedidos = 3 datáfonos\n   🚚 $12.000 (1 datáfono) · 🏢 $24.000 (2 datáfonos)",
+		"vie 13 nov</b> · 3 pedidos = 4 datáfonos\n   ✅ $36.000 (3 datáfonos) · ⚠️ $12.000 (1 datáfono)",
+		"jue 12 nov</b> · 1 datáfono\n   💵 $12.000 (1 datáfono) · ❌ 1 sin cobrar",
+		"Pedidos de más de un datáfono",
+		"sáb 14 nov · Ana Ruiz: <b>2 datáfonos</b> × $12.000 = $24.000 🏢",
+		"vie 13 nov · Luis Gómez: <b>2 datáfonos</b> × $12.000 = $24.000 ✅",
+		"Acumulado en esos días: $96.000</b> (6 pedidos = 8 datáfonos)", "Ya le pagaste: $12.000 (1 datáfono)", "aún le debes <b>$6.000", "Publicidad en esos días: $40.000; él pone $20.000",
+		"Se le debe: $36.000</b> (2 pedidos = 3 datáfonos, ya cobrados)",
+		"En camino: $12.000 (1 datáfono)", "En oficina: $24.000 (1 pedido = 2 datáfonos)", "Con novedad: $12.000 (1 datáfono)"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("falta %q en:\n%s", want, msg)
 		}
 	}
-	if !strings.Contains(deudaTexto(d, h, skydropx.Finance{}, nil), "No hay ventas") {
+	if !strings.Contains(deudaTexto(d, h, skydropx.Finance{}, nil, cuentaVendedor{}), "No hay ventas") {
 		t.Error("sin envíos debe decir que no hay ventas")
 	}
 }

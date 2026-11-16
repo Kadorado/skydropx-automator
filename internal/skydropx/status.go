@@ -99,6 +99,16 @@ func (c *Client) ShipmentStatuses(ctx context.Context) (map[string]Status, error
 	return out, nil
 }
 
+// Rastreo devuelve el estado de una guía con sus últimos eventos (con caché y respetando el límite de la API).
+func (c *Client) Rastreo(ctx context.Context, tracking, carrier string) (Status, error) {
+	if c.isMock() {
+		return Status{}, ErrMockMode
+	}
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	return c.trackingStatus(ctx, tracking, carrier)
+}
+
 // trackingStatus consulta (o toma de caché) el último evento de una guía.
 func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (Status, error) {
 	if cached, ok := statusCache[tracking]; ok && time.Now().Before(cached.exp) {

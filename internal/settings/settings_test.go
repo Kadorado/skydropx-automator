@@ -53,3 +53,53 @@ func TestComisionPorFecha(t *testing.T) {
 		t.Fatal("una fecha mal escrita debe dar error")
 	}
 }
+
+func TestVendorPayments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ajustes.json")
+	s, _ := Load(path, 15000)
+	if err := s.AddVendorPayment(VendorPayment{Date: "2026-11-16", Amount: 30000, Covered: 36000, Trackings: []string{"A", "B"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddVendorPayment(VendorPayment{Date: "2026-11-17", Amount: 20000, Covered: 12000, Trackings: []string{"C"}}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path, 15000) // se guarda en el archivo
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.PaidTrackings(); len(got) != 3 || got["A"] != "2026-11-16" || got["C"] != "2026-11-17" {
+		t.Errorf("PaidTrackings: %v", got)
+	}
+	if b := s.VendorBalance(); b != -2000 {
+		t.Errorf("VendorBalance: %v", b)
+	}
+	p, ok, err := s.RemoveLastVendorPayment()
+	if err != nil || !ok || p.Date != "2026-11-17" {
+		t.Fatalf("RemoveLast: %+v %v %v", p, ok, err)
+	}
+	if b := s.VendorBalance(); b != 6000 || len(s.PaidTrackings()) != 2 {
+		t.Errorf("después de borrar: %v %v", b, s.PaidTrackings())
+	}
+}
+
+func TestPublicidadEnSaldo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ajustes.json")
+	s, _ := Load(path, 15000)
+	_ = s.AddVendorPayment(VendorPayment{Date: "2026-11-16", Amount: 30000, Covered: 36000}) // le faltan 6.000
+	if err := s.AddAd(AdExpense{Date: "2026-11-16", Amount: 40000}); err != nil {            // pagó el dueño: -20.000
+		t.Fatal(err)
+	}
+	if err := s.AddAd(AdExpense{Date: "2026-11-17", Amount: 10000, PaidBy: "vendedor"}); err != nil { // +5.000
+		t.Fatal(err)
+	}
+	if err := s.AddAd(AdExpense{Amount: 0}); err == nil {
+		t.Error("publicidad en 0 debería dar error")
+	}
+	s, _ = Load(path, 15000)
+	if b := s.VendorBalance(); b != -9000 {
+		t.Errorf("VendorBalance: %v", b)
+	}
+	if a, ok, _ := s.RemoveLastAd(); !ok || a.PaidBy != "vendedor" || s.VendorBalance() != -14000 {
+		t.Errorf("RemoveLastAd: %+v %v", a, s.VendorBalance())
+	}
+}

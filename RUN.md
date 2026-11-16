@@ -21,10 +21,10 @@ Se leen desde el archivo `.env` (en local) o desde el panel de Render (en produc
 | `TELEGRAM_ALLOWED_CHAT_IDS` | Para el bot | IDs de chat autorizados, separados por coma. |
 | `ORIGIN_ADDRESS_ALIAS` | Opcional | Alias de la dirección de origen guardada en Skydropx (Mis direcciones). Por defecto `belu`. Esa dirección se usa como origen de todas las órdenes. |
 | `ORIGIN_ADDRESS_TEMPLATE_ID` | Opcional | ID (UUID) de esa dirección, si prefieres fijarlo en vez de buscarlo por alias. |
-| `SKYDROPX_WEBHOOK_SECRET` | Opcional | Clave HMAC (o token Bearer) del webhook de Skydropx. Con ella, la guía se avisa al instante en vez de esperar la revisión periódica. |
+| `SKYDROPX_WEBHOOK_SECRET` | Opcional | Clave HMAC (o token Bearer) del webhook de Skydropx. Con ella, la guía se avisa al instante en vez de esperar la revisión periódica, y llegan los avisos de rastreo: recibido por la transportadora, en ruta de entrega (llega hoy, con enlace de WhatsApp para el cliente), novedades, pagado y devolución. En Skydropx deben estar activos los eventos de rastreo de paquetes. |
 | `SKYDROPX_WEBHOOK_HEADER` | Opcional | Nombre del encabezado de autenticación del webhook. Por defecto `Authorization`. |
-| `TELEGRAM_ADMIN_CHAT_IDS` | Opcional | IDs del grupo donde se publica cada guía lista, con el formato para copiar al cliente. |
-| `TELEGRAM_GESTION_CHAT_IDS` | Opcional | IDs de tu grupo privado de gestión: recibe cada orden nueva con el botón para generar la guía con Interrapidísimo y acepta `/imprimir`. Si no se configura, se usa `TELEGRAM_ADMIN_CHAT_IDS`. |
+| `TELEGRAM_ADMIN_CHAT_IDS` | Opcional | IDs del grupo donde se publica cada guía lista, con el formato para copiar al cliente. También recibe el aviso de "en ruta de entrega" y acepta `/guia`. |
+| `TELEGRAM_GESTION_CHAT_IDS` | Opcional | IDs de tu grupo privado de gestión: recibe cada orden nueva con el botón para generar la guía con Interrapidísimo y acepta `/imprimir`, `/guia`, `/novedades`, `/resumen`, `/deuda`, `/pago`, `/pagos`, `/publicidad` y `/comision` (ver `/ayuda` en el grupo). Si no se configura, se usa `TELEGRAM_ADMIN_CHAT_IDS`. |
 | `DEFAULT_VALOR_UNITARIO` | No | Valor unitario si el mensaje no trae `Valor:`. Por defecto `60000`. |
 | `GUIA_CHECK_MINUTES` | No | Cada cuántos minutos se revisan guías nuevas. Por defecto `5`. |
 | `BOT_STATE_FILE` | No | Archivo de estado del bot. Local: `data/bot_state.json`. Render: `/var/data/bot_state.json`. |

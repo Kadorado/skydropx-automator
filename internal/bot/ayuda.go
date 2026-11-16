@@ -23,12 +23,19 @@ Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
 
 📋 <b>NOVEDADES PARA GESTIONAR</b>
 /novedades → envíos de los últimos 45 días que hay que gestionar con el cliente: en devolución o sin cobrar, intentos de entrega fallidos, en oficina y con novedad. Trae teléfono, ciudad, guía y último evento.
+/guia 240012345678 → estado de esa guía, últimos eventos y cuánto falta por cobrar
 
 🤝 <b>COMISIÓN DEL VENDEDOR</b>
 /deuda → lo que se le debe en los últimos 7 días, día por día
 /deuda 3 → últimos 3 días · /deuda hoy · /deuda ayer
 /deuda semana → la semana anterior · /deuda mes → lo que va del mes
 /deuda 2026-11-03 → ese día · /deuda 2026-11-01 2026-11-10 → ese rango
+/pago 150000 → registrar lo que le pagaste: marca como pagado lo cobrado pendiente
+/pago 150000 hasta ayer → solo lo cobrado de guías creadas hasta ayer (o hasta 2026-11-15)
+/pago borrar → borrar el último pago · /pagos → ver los pagos y el saldo
+/publicidad 40000 → publicidad que pagaste tú: él pone la mitad (se descuenta de su comisión)
+/publicidad 40000 vendedor → la pagó él: se le suma la mitad · se puede agregar fecha y nota
+/publicidad → ver lo registrado · /publicidad borrar → borrar la última
 /comision → ver el valor actual por datáfono y los cambios
 /comision 12000 → cambiarlo desde hoy
 /comision 12000 2026-12-01 → cambiarlo desde esa fecha
@@ -37,6 +44,7 @@ Las ventas anteriores conservan el valor de su momento.
 🔔 <b>AVISOS AUTOMÁTICOS</b>
 📦 Orden nueva → con el botón 🚚 para generar la guía
 🚚 La transportadora recibió el paquete → ya va en camino
+🛵 En ruta de entrega → llega hoy, con el enlace para avisarle al cliente por WhatsApp
 💵 ¡Pagaron! → el paquete se entregó y el cliente pagó
 ❌ No se pudo cobrar → el paquete va en devolución
 ⚠️ No pudieron entregar → llama al cliente, la transportadora reintenta
@@ -68,6 +76,7 @@ Valor: 60000</code>
 📦 La orden creada
 ✅ La guía lista, con el número, el rastreo y el PDF para enviarle al cliente
 
+/guia 240012345678 → ver en qué va un envío
 /ayuda → ver esta ayuda`
 
 // ayudaGrupoGuias es la ayuda del grupo donde el vendedor recibe las guías (no crea pedidos ahí).
@@ -76,6 +85,9 @@ const ayudaGrupoGuias = `📌 <b>GRUPO DE GUÍAS</b>
 Aquí llega cada guía lista para que se la reenvíes al comprador:
 📦 La orden creada
 ✅ La guía con el número, el enlace de rastreo y el PDF
+🛵 En ruta de entrega → el paquete llega hoy, con el enlace para avisarle al cliente por WhatsApp
+
+/guia 240012345678 → ver en qué va un envío, sus últimos eventos y cuánto falta por cobrar
 
 🛒 Los pedidos se crean escribiéndole al bot por chat privado, con los datos del cliente.
 
@@ -85,16 +97,22 @@ Aquí llega cada guía lista para que se la reenvíes al comprador:
 var (
 	comandosGestion = []telegram.Command{
 		{Command: "novedades", Description: "Envíos para gestionar: devoluciones, intentos fallidos, oficina"},
+		{Command: "guia", Description: "Estado de una guía (/guia 240012345678)"},
 		{Command: "resumen", Description: "Resumen de hoy y del mes (/resumen semana: la anterior)"},
 		{Command: "imprimir", Description: "Guías de hoy en hojas de 4 (/imprimir 3: últimos 3 días)"},
 		{Command: "deuda", Description: "Lo que se le debe al vendedor (/deuda 3, semana, mes o fechas)"},
+		{Command: "pago", Description: "Registrar un pago al vendedor (/pago 150000 hasta ayer)"},
+		{Command: "pagos", Description: "Ver los pagos al vendedor y el saldo"},
+		{Command: "publicidad", Description: "Registrar publicidad mitad y mitad (/publicidad 40000)"},
 		{Command: "comision", Description: "Ver o cambiar la comisión del vendedor por datáfono"},
 		{Command: "ayuda", Description: "Ver todos los comandos y avisos"},
 	}
 	comandosVendedor = []telegram.Command{
+		{Command: "guia", Description: "Ver en qué va un envío (/guia 240012345678)"},
 		{Command: "ayuda", Description: "Cómo enviar un pedido"},
 	}
 	comandosGrupoGuias = []telegram.Command{
+		{Command: "guia", Description: "Ver en qué va un envío (/guia 240012345678)"},
 		{Command: "ayuda", Description: "Qué llega a este grupo"},
 	}
 )

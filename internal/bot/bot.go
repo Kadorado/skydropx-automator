@@ -100,8 +100,24 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			b.comandoDeuda(ctx, chatID, text)
 			return
 		}
+		if strings.HasPrefix(text, "/publicidad") {
+			b.comandoPublicidad(ctx, chatID, text)
+			return
+		}
+		if strings.HasPrefix(text, "/pagos") {
+			b.comandoPagos(ctx, chatID)
+			return
+		}
+		if strings.HasPrefix(text, "/pago") {
+			b.comandoPago(ctx, chatID, text)
+			return
+		}
 		if strings.HasPrefix(text, "/novedades") {
 			b.comandoNovedades(ctx, chatID)
+			return
+		}
+		if strings.HasPrefix(text, "/guia") {
+			b.comandoGuia(ctx, chatID, text)
 			return
 		}
 		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
@@ -114,6 +130,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 	}
 	// El grupo de guías (TELEGRAM_ADMIN_CHAT_IDS) recibe órdenes y guías, pero ahí no se crean pedidos.
 	if !b.isAllowed(chatID) && b.isAdmin(chatID) {
+		if strings.HasPrefix(text, "/guia") {
+			b.comandoGuia(ctx, chatID, text)
+			return
+		}
 		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
 			b.say(ctx, chatID, ayudaGrupoGuias)
 		}
@@ -126,12 +146,17 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 	}
 	// La comisión y los resúmenes solo se manejan desde el grupo de gestión.
 	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") ||
-		strings.HasPrefix(text, "/deuda") {
+		strings.HasPrefix(text, "/deuda") || strings.HasPrefix(text, "/pago") ||
+		strings.HasPrefix(text, "/publicidad") {
 		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
 		return
 	}
 	if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
 		b.say(ctx, chatID, ayudaVendedor)
+		return
+	}
+	if strings.HasPrefix(text, "/guia") {
+		b.comandoGuia(ctx, chatID, text)
 		return
 	}
 	b.createOrder(ctx, chatID, sender, text)

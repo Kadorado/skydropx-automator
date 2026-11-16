@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"sort"
 	"strings"
@@ -139,6 +140,16 @@ type CommissionRate func(t time.Time) float64
 func FlatCommission(v float64) CommissionRate { return func(time.Time) float64 { return v } }
 
 func (c *Client) Finance(ctx context.Context, p Period, rate CommissionRate) (Finance, error) {
+	return c.finance(ctx, p, rate, maxFinanceQuantityFetch)
+}
+
+// FinanceCompleta es Finance consultando la cantidad de todas las órdenes del periodo, sin tope:
+// tarda más (2 consultas por segundo) pero la comisión no queda estimada. La corta el contexto.
+func (c *Client) FinanceCompleta(ctx context.Context, p Period, rate CommissionRate) (Finance, error) {
+	return c.finance(ctx, p, rate, math.MaxInt)
+}
+
+func (c *Client) finance(ctx context.Context, p Period, rate CommissionRate, maxLookups int) (Finance, error) {
 	if c.isMock() {
 		return Finance{}, ErrMockMode
 	}
@@ -154,7 +165,7 @@ func (c *Client) Finance(ctx context.Context, p Period, rate CommissionRate) (Fi
 			orderIDs = append(orderIDs, s.OrderID)
 		}
 	}
-	qty, _ := c.orderQuantitiesUpTo(ctx, orderIDs, maxFinanceQuantityFetch)
+	qty, _ := c.orderQuantitiesUpTo(ctx, orderIDs, maxLookups)
 	products := orderProducts(orderIDs)
 	for i := range shipments {
 		s := &shipments[i]
