@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 )
 
 const ayudaPago = `Para registrar lo que le pagaste al vendedor:
-<code>/pago 150000</code> → cubre todo lo cobrado que no se le había pagado
+<code>/pago 150000</code> → marca como pagado lo cobrado, de lo más antiguo a lo más nuevo, hasta donde alcance
 <code>/pago 150000 hasta ayer</code> → solo lo cobrado de guías creadas hasta ayer
 <code>/pago 150000 hasta 2026-11-15</code> → solo guías creadas hasta ese día
 <code>/pago borrar</code> → borra el último pago si te equivocaste
@@ -103,7 +104,7 @@ func (b *Bot) comandoPago(ctx context.Context, chatID int64, text string) {
 		return
 	}
 	saldoAntes := b.opts.Settings.VendorBalance()
-	cubre := porPagar(f.PerShipment, b.opts.Settings.PaidTrackings())
+	cubre, quedan := repartirPago(porPagar(f.PerShipment, b.opts.Settings.PaidTrackings()), valor-saldoAntes)
 	pago := settings.VendorPayment{Date: time.Now().In(colombiaTZ).Format("2006-01-02"), Amount: valor, Through: hasta}
 	for _, r := range cubre {
 		pago.Covered += r.Commission
@@ -114,56 +115,93 @@ func (b *Bot) comandoPago(ctx context.Context, chatID int64, text string) {
 		b.say(ctx, chatID, "No se pudo guardar el pago: "+err.Error())
 		return
 	}
-	msg := pagoTexto(pago, cubre, saldoAntes)
+	msg := pagoTexto(pago, cubre, quedan, saldoAntes)
 	if f.Commission.Estimated > 0 {
 		msg += fmt.Sprintf("\n⚠️ <i>No se pudo saber la cantidad de %d pedido(s) y se contaron como 1 datáfono. Si no cuadra, haz <code>/pago borrar</code> y vuelve a registrarlo en un rato.</i>\n", f.Commission.Estimated)
 	}
 	b.say(ctx, chatID, msg)
 }
 
-// pagoTexto confirma un pago registrado: qué envíos cubre por día y cómo queda el saldo con el vendedor.
-func pagoTexto(p settings.VendorPayment, cubre []skydropx.ShipmentMoney, saldoAntes float64) string {
+// repartirPago marca como pagados los envíos cobrados del más antiguo al más nuevo mientras alcance el
+// presupuesto (lo pagado, más lo que el vendedor debía o menos lo que se le debía de antes). Se detiene en
+// el primero que no alcanza para que lo pagado sea siempre "hasta tal día"; los demás quedan por pagarle.
+func repartirPago(pendientes []skydropx.ShipmentMoney, presupuesto float64) (cubre, quedan []skydropx.ShipmentMoney) {
+	orden := append([]skydropx.ShipmentMoney(nil), pendientes...)
+	sort.SliceStable(orden, func(i, j int) bool { return fechaEnvio(orden[i]).Before(fechaEnvio(orden[j])) })
+	var usado float64
+	for i, r := range orden {
+		if usado+r.Commission > presupuesto+0.5 {
+			return cubre, orden[i:]
+		}
+		usado += r.Commission
+		cubre = append(cubre, r)
+	}
+	return cubre, nil
+}
+
+// fechaEnvio es la fecha de creación de la guía (cero si no se entiende: va primero).
+func fechaEnvio(r skydropx.ShipmentMoney) time.Time {
+	t, _ := time.Parse(time.RFC3339, r.Date)
+	return t
+}
+
+// porDia resume envíos por día de la guía, en el orden en que vienen.
+func porDia(rows []skydropx.ShipmentMoney) (lineas []string, total monto) {
+	dias := map[string]*monto{}
+	var orden []string
+	for _, r := range rows {
+		key := "sin fecha"
+		if t := fechaEnvio(r); !t.IsZero() {
+			t = t.In(colombiaTZ)
+			key = diasCortos[t.Weekday()] + " " + diaCorto(t)
+		}
+		if dias[key] == nil {
+			dias[key] = &monto{}
+			orden = append(orden, key)
+		}
+		dias[key].sumar(r)
+	}
+	for _, k := range orden {
+		lineas = append(lineas, fmt.Sprintf("• %s · %s · %s", k, dias[k].cuenta(), formatCOP(dias[k].valor)))
+		total.juntar(*dias[k])
+	}
+	return lineas, total
+}
+
+// pagoTexto confirma un pago registrado: qué envíos cubre por día, cuáles quedan por pagarle y cómo
+// queda el saldo con el vendedor.
+func pagoTexto(p settings.VendorPayment, cubre, quedan []skydropx.ShipmentMoney, saldoAntes float64) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "💵 <b>Pago al vendedor registrado: %s</b> (%s)\n", formatCOP(p.Amount), p.Date)
 	if p.Through != "" {
 		fmt.Fprintf(&b, "Cubre lo cobrado de guías creadas hasta el %s.\n", p.Through)
 	}
-	if len(cubre) == 0 {
+	switch {
+	case saldoAntes > 0.5:
+		fmt.Fprintf(&b, "↩️ Primero cubre %s que le debías de antes.\n", formatCOP(saldoAntes))
+	case saldoAntes < -0.5:
+		fmt.Fprintf(&b, "↩️ Se le descontaron %s que él te debía (publicidad o adelantos).\n", formatCOP(-saldoAntes))
+	}
+	if len(cubre) > 0 {
+		lineas, total := porDia(cubre)
+		b.WriteString("\n💵 <b>Envíos que quedan pagados</b> (por día de la guía)\n")
+		b.WriteString(strings.Join(lineas, "\n") + "\n")
+		fmt.Fprintf(&b, "<b>Comisión pagada: %s</b> (%s)\n", formatCOP(total.valor), total.cuenta())
+	} else if len(quedan) == 0 {
 		b.WriteString("\nNo había envíos cobrados pendientes de pagarle: queda como adelanto.\n")
 	} else {
-		dias := map[string]*monto{}
-		var orden []string
-		for _, r := range cubre {
-			t, err := time.Parse(time.RFC3339, r.Date)
-			key := "sin fecha"
-			if err == nil {
-				t = t.In(colombiaTZ)
-				key = diasCortos[t.Weekday()] + " " + diaCorto(t)
-			}
-			if dias[key] == nil {
-				dias[key] = &monto{}
-				orden = append(orden, key)
-			}
-			dias[key].sumar(r)
-		}
-		var total monto
-		b.WriteString("\n<b>Envíos cobrados que cubre</b> (por día de la guía)\n")
-		for _, k := range orden {
-			fmt.Fprintf(&b, "• %s · %s · %s\n", k, dias[k].cuenta(), formatCOP(dias[k].valor))
-			total.juntar(*dias[k])
-		}
-		fmt.Fprintf(&b, "<b>Comisión de esos envíos: %s</b> (%s)\n", formatCOP(total.valor), total.cuenta())
+		b.WriteString("\nNo alcanzó para cubrir ningún envío cobrado completo: queda como adelanto.\n")
 	}
-
-	diff := p.Covered - p.Amount
-	saldo := saldoAntes + diff
-	switch {
-	case diff > 0.5:
-		fmt.Fprintf(&b, "\n⚠️ Le pagaste %s menos de lo que suman.\n", formatCOP(diff))
-	case diff < -0.5:
-		fmt.Fprintf(&b, "\nℹ️ Le pagaste %s más de lo que suman.\n", formatCOP(-diff))
-	default:
-		b.WriteString("\n✅ Cuadra exacto.\n")
+	if len(quedan) > 0 {
+		lineas, total := porDia(quedan)
+		fmt.Fprintf(&b, "\n✅ <b>Aún se le debe: %s</b> (%s, ya cobrados)\n", formatCOP(total.valor), total.cuenta())
+		b.WriteString(strings.Join(lineas, "\n") + "\n")
+	}
+	saldo := saldoAntes + p.Covered - p.Amount
+	if len(quedan) == 0 && saldo > -0.5 && saldo < 0.5 {
+		b.WriteString("\n✅ Quedan a paz y salvo con lo cobrado.\n")
+	} else if saldo < -0.5 || saldo > 0.5 {
+		b.WriteString("\n")
 	}
 	b.WriteString(saldoTexto(saldo))
 	b.WriteString("\n<i>Si te equivocaste: /pago borrar</i>\n")

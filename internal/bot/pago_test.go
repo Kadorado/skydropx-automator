@@ -37,27 +37,51 @@ func TestArgsPago(t *testing.T) {
 
 func TestPorPagarYPagoTexto(t *testing.T) {
 	rows := []skydropx.ShipmentMoney{
-		{Date: "2026-11-14T10:00:00-05:00", Tracking: "A", Status: "collected", Units: 2, Commission: 24000},
-		{Date: "2026-11-14T11:00:00-05:00", Tracking: "B", Status: "collected", Units: 1, Commission: 12000},
-		{Date: "2026-11-13T10:00:00-05:00", Tracking: "C", Status: "collected", Units: 1, Commission: 12000},
-		{Date: "2026-11-13T10:00:00-05:00", Tracking: "D", Status: "pending", Units: 1, Commission: 12000},
+		{Date: "2026-11-13T10:00:00-05:00", Tracking: "A", Status: "collected", Units: 3, Commission: 45000},
+		{Date: "2026-11-12T11:00:00-05:00", Tracking: "B", Status: "collected", Units: 2, Commission: 30000},
+		{Date: "2026-11-11T10:00:00-05:00", Tracking: "C", Status: "collected", Units: 4, Commission: 60000},
+		{Date: "2026-11-10T10:00:00-05:00", Tracking: "D", Status: "collected", Units: 1, Commission: 15000},
+		{Date: "2026-11-06T10:00:00-05:00", Tracking: "E", Status: "collected", Units: 1, Commission: 15000},
+		{Date: "2026-11-05T10:00:00-05:00", Tracking: "F", Status: "collected", Units: 1, Commission: 15000},
+		{Date: "2026-11-13T10:00:00-05:00", Tracking: "G", Status: "pending", Units: 1, Commission: 15000},
 	}
-	cubre := porPagar(rows, map[string]string{"C": "2026-11-14"})
-	if len(cubre) != 2 || cubre[0].Tracking != "A" || cubre[1].Tracking != "B" {
-		t.Fatalf("porPagar: %+v", cubre)
+	pendientes := porPagar(rows, map[string]string{"F": "2026-11-07"})
+	if len(pendientes) != 5 {
+		t.Fatalf("porPagar: %+v", pendientes)
 	}
-	p := settings.VendorPayment{Date: "2026-11-16", Amount: 30000, Covered: 36000, Units: 3, Through: "2026-11-15"}
-	msg := pagoTexto(p, cubre, 0)
-	for _, want := range []string{"Pago al vendedor registrado: $30.000", "guías creadas hasta el 2026-11-15",
-		"sáb 14 nov · 2 pedidos = 3 datáfonos · $36.000", "Le pagaste $6.000 menos", "aún le debes <b>$6.000"} {
+
+	// El caso real: $120.000 cubren del 6 al 12 de noviembre; las 3 del 13 quedan por pagarle.
+	cubre, quedan := repartirPago(pendientes, 120000)
+	if len(cubre) != 4 || cubre[0].Tracking != "E" || cubre[3].Tracking != "B" || len(quedan) != 1 || quedan[0].Tracking != "A" {
+		t.Fatalf("repartirPago: cubre %+v quedan %+v", cubre, quedan)
+	}
+	p := settings.VendorPayment{Date: "2026-11-16", Amount: 120000, Covered: 120000, Units: 8}
+	msg := pagoTexto(p, cubre, quedan, 0)
+	for _, want := range []string{"Pago al vendedor registrado: $120.000", "Envíos que quedan pagados",
+		"mié 11 nov · 1 pedido = 4 datáfonos · $60.000", "Comisión pagada: $120.000</b> (4 pedidos = 8 datáfonos)",
+		"Aún se le debe: $45.000</b> (1 pedido = 3 datáfonos, ya cobrados)", "vie 13 nov · 1 pedido = 3 datáfonos · $45.000"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("falta %q en:\n%s", want, msg)
 		}
 	}
-	if msg := pagoTexto(settings.VendorPayment{Amount: 36000, Covered: 36000}, cubre, 0); !strings.Contains(msg, "Cuadra exacto") || strings.Contains(msg, "le debes") {
+	if strings.Contains(msg, "aún le debes") || strings.Contains(msg, "te debe") {
+		t.Errorf("no debe quedar saldo aparte:\n%s", msg)
+	}
+
+	// Con publicidad pendiente (él te debe $20.000), $130.000 alcanzan para $150.000 de comisión.
+	if cubre, _ := repartirPago(pendientes, 130000-(-20000)); len(cubre) != 4 {
+		t.Errorf("con saldo a favor: %+v", cubre)
+	}
+	// Lo que sobra sin completar un envío queda como adelanto.
+	cubre, quedan = repartirPago(pendientes, 40000)
+	p = settings.VendorPayment{Amount: 40000, Covered: 30000}
+	if msg := pagoTexto(p, cubre, quedan, 0); len(cubre) != 2 || !strings.Contains(msg, "él te debe <b>$10.000") {
+		t.Errorf("adelanto parcial (%d envíos):\n%s", len(cubre), msg)
+	}
+	if msg := pagoTexto(settings.VendorPayment{Amount: 30000, Covered: 30000}, cubre, nil, 0); !strings.Contains(msg, "paz y salvo") {
 		t.Errorf("pago exacto:\n%s", msg)
 	}
-	if msg := pagoTexto(settings.VendorPayment{Amount: 10000}, nil, 0); !strings.Contains(msg, "él te debe <b>$10.000") {
+	if msg := pagoTexto(settings.VendorPayment{Amount: 10000}, nil, nil, 0); !strings.Contains(msg, "queda como adelanto") || !strings.Contains(msg, "él te debe <b>$10.000") {
 		t.Errorf("adelanto:\n%s", msg)
 	}
 }

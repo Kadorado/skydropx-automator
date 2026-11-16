@@ -30,7 +30,7 @@ Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
 /deuda 3 → últimos 3 días · /deuda hoy · /deuda ayer
 /deuda semana → la semana anterior · /deuda mes → lo que va del mes
 /deuda 2026-11-03 → ese día · /deuda 2026-11-01 2026-11-10 → ese rango
-/pago 150000 → registrar lo que le pagaste: marca como pagado lo cobrado pendiente
+/pago 150000 → registrar lo que le pagaste: marca como pagado lo cobrado, de lo más antiguo a lo más nuevo, hasta donde alcance
 /pago 150000 hasta ayer → solo lo cobrado de guías creadas hasta ayer (o hasta 2026-11-15)
 /pago borrar → borrar el último pago · /pagos → ver los pagos y el saldo
 /publicidad 40000 → publicidad que pagaste tú: él pone la mitad (se descuenta de su comisión)
