@@ -1,5 +1,6 @@
 // Command postalcodes downloads the 4-72 national postal code table from datos.gov.co
-// and writes internal/parser/postal_codes.csv: one urban postal code per municipality.
+// and writes internal/parser/postal_codes.csv: per municipality, its main postal code (the lowest
+// urban one) and the rest of its codes (urban first, then rural).
 //
 // Usage: go run ./cmd/postalcodes
 package main
@@ -44,27 +45,22 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Keep the lowest urban code of each municipality; rural codes only when it has no urban one.
-	type best struct {
+	type code struct {
 		code  string
 		urban bool
 	}
-	chosen := map[[2]string]best{}
+	codes := map[[2]string][]code{}
 	for _, r := range rows {
-		code, err := fixPostalCode(r.PostalCode)
+		c, err := fixPostalCode(r.PostalCode)
 		if err != nil {
 			log.Fatalf("%s, %s: %v", r.City, r.Department, err)
 		}
 		key := [2]string{strings.TrimSpace(r.Department), strings.TrimSpace(r.City)}
-		urban := r.Type == "Urbano"
-		cur, ok := chosen[key]
-		if !ok || (urban && !cur.urban) || (urban == cur.urban && code < cur.code) {
-			chosen[key] = best{code, urban}
-		}
+		codes[key] = append(codes[key], code{c, r.Type == "Urbano"})
 	}
 
-	keys := make([][2]string, 0, len(chosen))
-	for k := range chosen {
+	keys := make([][2]string, 0, len(codes))
+	for k := range codes {
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool {
@@ -79,9 +75,20 @@ func main() {
 		log.Fatal(err)
 	}
 	w := csv.NewWriter(f)
-	w.Write([]string{"departamento", "municipio", "codigo_postal"})
+	w.Write([]string{"departamento", "municipio", "codigo_postal", "otros_codigos"})
 	for _, k := range keys {
-		w.Write([]string{k[0], k[1], chosen[k].code})
+		cs := codes[k]
+		sort.Slice(cs, func(i, j int) bool {
+			if cs[i].urban != cs[j].urban {
+				return cs[i].urban
+			}
+			return cs[i].code < cs[j].code
+		})
+		var others []string
+		for _, c := range cs[1:] {
+			others = append(others, c.code)
+		}
+		w.Write([]string{k[0], k[1], cs[0].code, strings.Join(others, " ")})
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {

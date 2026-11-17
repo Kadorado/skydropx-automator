@@ -8,8 +8,8 @@ func TestExplicitPostalCode(t *testing.T) {
 		t.Fatalf("CodigoPostal = %q, want 130010", got)
 	}
 	noPostal := "*Receptor:* Ana\n*Ciudad:* Cartagena\n*Dirección:* Cr 92#43-75"
-	if got := ParseWhatsAppMessage(noPostal).Data.PostalCode; got != "130001" {
-		t.Fatalf("CodigoPostal = %q, want 130001 de la tabla", got)
+	if got := ParseWhatsAppMessage(noPostal).Data.PostalCode; got != "130002" {
+		t.Fatalf("CodigoPostal = %q, want 130002 de la tabla (el que acepta Skydropx)", got)
 	}
 }
 
@@ -23,7 +23,7 @@ func TestPostalCodeFromTable(t *testing.T) {
 		{"Tadó", "Tadó", "Chocó", "271070"}, // the old table had 273010
 		{"Tad", "Tadó", "Chocó", "271070"},
 		{"Condoto", "Condoto", "Chocó", "273030"}, // the old table had 274030
-		{"Itagüí", "Itagüí", "Antioquia", "055410"},
+		{"Itagüí", "Itagüí", "Antioquia", "055412"}, // the one Skydropx accepts
 		{"Bogotá", "Bogotá D.C.", "Bogotá D.C.", "110111"},
 		{"La Unión Nariño", "La Union", "Nariño", "521520"},
 		{"La Unión", "La Unión", "", ""}, // exists in several departments
@@ -41,5 +41,21 @@ func TestPostalCodeWithDepartmentLine(t *testing.T) {
 	msg := "*Receptor:* Ana\n*Ciudad:* La Unión\n*Departamento:* Nariño\n*Dirección:* Cr 1"
 	if got := ParseWhatsAppMessage(msg).Data.PostalCode; got != "521520" {
 		t.Fatalf("CodigoPostal = %q, want 521520", got)
+	}
+}
+
+func TestInterrapidisimoCoverage(t *testing.T) {
+	cases := []struct{ city, dept, want string }{
+		{"Nuquí", "Chocó", CoverageNoCOD},
+		{"Nuqui", "", CoverageNoCOD},
+		{"Riosucio", "Chocó", CoverageNone},
+		{"Quibdó", "Chocó", ""},
+		{"Tad", "", ""},
+		{"Pueblo Inventado", "", ""},
+	}
+	for _, c := range cases {
+		if got := InterrapidisimoCoverage(c.city, c.dept); got != c.want {
+			t.Errorf("%s, %s = %q, want %q", c.city, c.dept, got, c.want)
+		}
 	}
 }

@@ -15,7 +15,7 @@ import (
 	"skydropx-automator/internal/domain"
 )
 
-// fakeSkydropx simulates the API: postal code 130001 "doesn't exist" and 130002 does.
+// fakeSkydropx simulates the API: postal code 130001 "doesn't exist" and any other does.
 type fakeSkydropx struct {
 	mu        sync.Mutex
 	quoted    []string       // quoted postal codes, in order
@@ -97,11 +97,12 @@ func TestQuoteLabelAndCreateLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QuoteLabel: %v", err)
 	}
-	if q.RateID != "r-barata" || q.Total != 14500 || q.Days != 2 || q.PostalCode != "130002" {
+	// After 130001 it tries Cartagena's own 4-72 codes first: 130001 is listed there, so 130003 is next.
+	if q.RateID != "r-barata" || q.Total != 14500 || q.Days != 2 || q.PostalCode != "130003" {
 		t.Fatalf("cotización inesperada: %+v", q)
 	}
-	if strings.Join(f.quoted, ",") != "130001,130002" {
-		t.Fatalf("códigos cotizados = %v, se esperaba 130001 y luego 130002", f.quoted)
+	if strings.Join(f.quoted, ",") != "130001,130003" {
+		t.Fatalf("códigos cotizados = %v, se esperaba 130001 y luego 130003", f.quoted)
 	}
 	if carriers, _ := json.Marshal(f.quoteBody["requested_carriers"]); string(carriers) != `["interrapidisimo"]` {
 		t.Fatalf("requested_carriers = %s", carriers)
@@ -219,5 +220,17 @@ func TestSaveRecipientAddress(t *testing.T) {
 	}
 	if attrs["postal_code"] != "130002" || attrs["email"] != "tienda@example.com" || attrs["reference"] != "Villa Estrella" {
 		t.Fatalf("dirección inesperada: %v", attrs)
+	}
+}
+
+func TestRetryPostalsTriesOwnCodesFirst(t *testing.T) {
+	got := retryPostals("055410", []string{"055411", "055412", "055401"})
+	if len(got) < 4 || got[0] != "055411" || got[1] != "055412" || got[2] != "055401" || got[3] != "055402" {
+		t.Fatalf("own codes first, then neighbors without repeats: %v", got[:5])
+	}
+	for _, c := range got {
+		if c == "055410" {
+			t.Fatal("must not retry the code that already failed")
+		}
 	}
 }

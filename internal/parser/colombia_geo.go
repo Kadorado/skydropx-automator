@@ -17,6 +17,7 @@ type GeoInfo struct {
 	City       string
 	Department string
 	PostalCode string
+	OtherCodes []string // the municipality's other 4-72 codes, urban first
 }
 
 // Map of main and frequent municipalities in Colombia (normalized key, no accents, lowercase).
@@ -178,6 +179,22 @@ func LookupPostalCode(city, dept string) string {
 	return ""
 }
 
+// OtherPostalCodes returns the municipality's other 4-72 postal codes (urban first), to try when
+// Skydropx doesn't accept the main one.
+func OtherPostalCodes(city, dept string) []string {
+	key := normalizeKey(city)
+	if info, ok := colombiaCities[key]; ok {
+		key = normalizeKey(info.City)
+		if dept == "" {
+			dept = info.Department
+		}
+	}
+	if m, ok := lookupMunicipality(key, dept); ok {
+		return m.OtherCodes
+	}
+	return nil
+}
+
 func curatedPostal(key, dept string, info GeoInfo) string {
 	// The proper name also covers aliases like "tad" -> Tadó.
 	for _, k := range []string{key, normalizeKey(info.City)} {
@@ -212,7 +229,7 @@ func loadPostalCodes() {
 		if dept == "" {
 			dept = r[0]
 		}
-		info := GeoInfo{City: r[1], Department: dept, PostalCode: r[2]}
+		info := GeoInfo{City: r[1], Department: dept, PostalCode: r[2], OtherCodes: strings.Fields(r[3])}
 		key := normalizeKey(r[1])
 		postalByCity[key] = append(postalByCity[key], info)
 		for _, article := range []string{"el ", "la ", "los ", "las "} {
@@ -247,4 +264,54 @@ func lookupMunicipality(key, dept string) (GeoInfo, bool) {
 		}
 	}
 	return GeoInfo{}, false
+}
+
+// Interrapidísimo problems by municipality, found by quoting every municipality through Skydropx
+// (go run ./cmd/validatepostal). Only municipalities where it doesn't work are listed.
+//
+//go:embed interrapidisimo_coverage.csv
+var coverageCSV string
+
+const (
+	CoverageNoCOD  = "sin_contraentrega" // Interrapidísimo reaches it, but not with cash on delivery
+	CoverageNone   = "sin_cobertura"     // Interrapidísimo doesn't reach it
+	CoverageNoCode = "codigo_no_existe"  // Skydropx accepts none of its postal codes
+)
+
+var (
+	coverageOnce sync.Once
+	coverage     map[string]string // "department|municipality" (normalized) -> one of the Coverage* values
+)
+
+func loadCoverage() {
+	coverage = map[string]string{}
+	records, err := csv.NewReader(strings.NewReader(coverageCSV)).ReadAll()
+	if err != nil {
+		panic("interrapidisimo_coverage.csv: " + err.Error())
+	}
+	for _, r := range records[1:] {
+		dept := colombiaDepartments[normalizeKey(r[0])]
+		if dept == "" {
+			dept = r[0]
+		}
+		coverage[normalizeKey(dept)+"|"+normalizeKey(r[1])] = r[2]
+	}
+}
+
+// InterrapidisimoCoverage returns one of the Coverage* values when Interrapidísimo is known not to
+// work for that municipality, or "" if it works or the municipality isn't recognized.
+func InterrapidisimoCoverage(city, dept string) string {
+	key := normalizeKey(city)
+	if info, ok := colombiaCities[key]; ok {
+		key = normalizeKey(info.City)
+		if dept == "" {
+			dept = info.Department
+		}
+	}
+	m, ok := lookupMunicipality(key, dept)
+	if !ok {
+		return ""
+	}
+	coverageOnce.Do(loadCoverage)
+	return coverage[normalizeKey(m.Department)+"|"+normalizeKey(m.City)]
 }

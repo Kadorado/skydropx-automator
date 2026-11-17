@@ -313,7 +313,7 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 	if err != nil {
 		log.Printf("bot: no se pudo revisar el historial del cliente: %v", err)
 	}
-	warning := opsWarning(hist)
+	warning := carrierOpsWarning(data) + opsWarning(hist)
 
 	if err := b.st.add(Pending{
 		Warning:     warning,
@@ -339,12 +339,13 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 	if !res.IsMock {
 		b.recordCustomer(ctx, data, res.ID, senderOrChat(sender, chatID))
 	}
-	msg += sellerWarning(hist)
+	seller := carrierSellerWarning(data) + sellerWarning(hist)
+	msg += seller
 	if res.IsMock {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
 	}
 	b.say(ctx, chatID, msg)
-	b.notifyAdmins(ctx, senderOrChat(sender, chatID), data, res.ID, res.IsMock, warning, sellerWarning(hist))
+	b.notifyAdmins(ctx, senderOrChat(sender, chatID), data, res.ID, res.IsMock, warning, seller)
 }
 
 func senderOrChat(sender string, chatID int64) string {

@@ -39,7 +39,8 @@ type LabelQuote struct {
 }
 
 // QuoteLabel quotes the shipment only with Interrapidísimo and returns the cheapest rate.
-// If Skydropx doesn't recognize the destination postal code, it tries other codes from the same city.
+// If Skydropx doesn't recognize the destination postal code, it tries the municipality's other codes
+// and then nearby numbers.
 func (c *Client) QuoteLabel(ctx context.Context, data domain.ShipmentData) (LabelQuote, error) {
 	if c.isMock() {
 		return LabelQuote{}, ErrMockMode
@@ -61,7 +62,7 @@ func (c *Client) QuoteLabel(ctx context.Context, data domain.ShipmentData) (Labe
 		return q, labelQuoteError(failMsg, err)
 	}
 	firstMsg := failMsg
-	for _, alt := range postalCandidates(postal) {
+	for _, alt := range retryPostals(postal, parser.OtherPostalCodes(data.City, data.Department)) {
 		select {
 		case <-ctx.Done():
 			return LabelQuote{}, ctx.Err()
@@ -179,6 +180,20 @@ func parseAmount(raw json.RawMessage) float64 {
 // isUnknownPostal reports whether Skydropx rejected the destination postal code as nonexistent.
 func isUnknownPostal(msg string) bool {
 	return strings.Contains(msg, "postal_code")
+}
+
+// retryPostals lists the codes to try after postal: first the municipality's own 4-72 codes, then
+// the neighboring numbers (which may belong to another municipality).
+func retryPostals(postal string, own []string) []string {
+	seen := map[string]bool{postal: true}
+	var out []string
+	for _, c := range append(append([]string(nil), own...), postalCandidates(postal)...) {
+		if !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // postalCandidates returns other codes from the same city: 130001 -> 130002 … 130020.
