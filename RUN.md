@@ -25,6 +25,8 @@ Se leen desde el archivo `.env` (en local) o desde el panel de Render (en produc
 | `SKYDROPX_WEBHOOK_HEADER` | Opcional | Nombre del encabezado de autenticación del webhook. Por defecto `Authorization`. |
 | `TELEGRAM_ADMIN_CHAT_IDS` | Opcional | IDs del grupo donde se publica cada guía lista, con el formato para copiar al cliente. También recibe el aviso de "en ruta de entrega" y acepta `/guia`. |
 | `TELEGRAM_GESTION_CHAT_IDS` | Opcional | IDs de tu grupo privado de gestión: recibe cada orden nueva con el botón para generar la guía con Interrapidísimo y acepta `/imprimir`, `/guia`, `/novedades`, `/resumen`, `/deuda`, `/pago`, `/pagos`, `/publicidad` y `/comision` (ver `/ayuda` en el grupo). Si no se configura, se usa `TELEGRAM_ADMIN_CHAT_IDS`. |
+| `MONGODB_URI` | Opcional | Conexión a MongoDB Atlas (`mongodb+srv://…`) para la base de clientes (`/clientes`, `/autoriza`, `/baja`). Sin ella no se guardan clientes y el resto funciona igual. |
+| `MONGODB_DB` | No | Nombre de la base en MongoDB. Por defecto `skydropx`. |
 | `DEFAULT_VALOR_UNITARIO` | No | Valor unitario si el mensaje no trae `Valor:`. Por defecto `60000`. |
 | `GUIA_CHECK_MINUTES` | No | Cada cuántos minutos se revisan guías nuevas. Por defecto `5`. |
 | `BOT_STATE_FILE` | No | Archivo de estado del bot. Local: `data/bot_state.json`. Render: `/var/data/bot_state.json`. |

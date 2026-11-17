@@ -26,6 +26,13 @@ Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
 /guia 240012345678 → estado de esa guía, últimos eventos y cuánto falta por cobrar
 /cliente 1234567890 → historial de un cliente por cédula o teléfono: qué pagó, qué devolvió y si tardó en recoger en oficina
 
+👥 <b>BASE DE CLIENTES</b>
+/clientes → resumen y archivo para Excel con todos los clientes
+/clientes migrar → traer los clientes de los envíos anteriores en Skydropx (se hace una vez; si se repite no duplica)
+/autoriza 3001234567 respondió SÍ por WhatsApp → registrar que el cliente autorizó publicidad
+/baja 3001234567 → el cliente no quiere más mensajes
+Cada pedido nuevo guarda al cliente solo; si el pedido trae "Autoriza datos: SÍ", queda autorizado, y "Fuente:" dice de dónde llegó.
+
 🤝 <b>COMISIÓN DEL VENDEDOR</b>
 /deuda → lo que se le debe en los últimos 7 días, día por día
 /deuda 3 → últimos 3 días · /deuda hoy · /deuda ayer
@@ -67,10 +74,14 @@ Ciudad: Montería
 Barrio: El Centro
 Dirección: Calle 10 # 5-20
 Cantidad: 2
-Valor: 60000</code>
+Valor: 60000
+Autoriza datos: SÍ
+Fuente: Facebook</code>
 
 • "Valor" es por datáfono. Si no lo pones, se usa 60.000.
 • Correo y código postal son opcionales.
+• "Autoriza datos": pregúntale al cliente si acepta que guardemos sus datos para enviarle ofertas, y pon SÍ o NO. Si no lo preguntaste, quita la línea.
+• "Fuente": de dónde llegó el cliente (Facebook, WhatsApp, referido…). Es opcional.
 
 🔁 Si es un pedido igual a uno reciente y SÍ es nuevo, escribe REPETIR en la primera línea.
 
@@ -108,6 +119,9 @@ var (
 		{Command: "novedades", Description: "Envíos para gestionar: devoluciones, intentos fallidos, oficina"},
 		{Command: "guia", Description: "Estado de una guía (/guia 240012345678)"},
 		{Command: "cliente", Description: "Historial de un cliente por cédula o teléfono"},
+		{Command: "clientes", Description: "Base de clientes: resumen y archivo para Excel"},
+		{Command: "autoriza", Description: "Registrar que un cliente autorizó publicidad"},
+		{Command: "baja", Description: "Un cliente no quiere más mensajes"},
 		{Command: "resumen", Description: "Resumen de hoy y del mes (/resumen semana: la anterior)"},
 		{Command: "imprimir", Description: "Guías de hoy en hojas de 4 (/imprimir 3: últimos 3 días)"},
 		{Command: "deuda", Description: "Lo que se le debe al vendedor (/deuda 3, semana, mes o fechas)"},

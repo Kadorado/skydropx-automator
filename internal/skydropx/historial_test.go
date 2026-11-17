@@ -2,6 +2,7 @@ package skydropx
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -76,5 +77,24 @@ func TestHistorialCliente(t *testing.T) {
 	// Alguien sin historial.
 	if malos, total, _ := c.HistorialCliente(context.Background(), "999999", "3150000000", 3); len(malos) != 0 || total != 0 {
 		t.Errorf("sin historial: %+v %d", malos, total)
+	}
+}
+
+func TestRecipientsFromList(t *testing.T) {
+	list := ShipmentList{
+		Data: []json.RawMessage{
+			json.RawMessage(`{"id":"s1","attributes":{"created_at":"2026-11-01T10:00:00-05:00","master_tracking_number":"G1"},"relationships":{"address_to":{"data":{"id":"a1"}}}}`),
+			json.RawMessage(`{"id":"s2","attributes":{"created_at":"2026-11-02T10:00:00-05:00","master_tracking_number":"G2","workflow_status":"cancelled"},"relationships":{"address_to":{"data":{"id":"a1"}}}}`),
+			json.RawMessage(`{"id":"s3","attributes":{"created_at":"2026-11-03T10:00:00-05:00","master_tracking_number":""},"relationships":{"address_to":{"data":{"id":"a1"}}}}`),
+		},
+		Included: []json.RawMessage{
+			json.RawMessage(`{"id":"a1","type":"address","attributes":{"name":" Ana Pérez ","phone":"3001112233","email":"ana@mail.com","tax_id_number":"111111","area_level1":"Córdoba","area_level2":"Montería","area_level3":"Centro","street1":"Calle 1 # 2-3"}}`),
+		},
+	}
+	got := recipientsFromList(list)
+	want := Recipient{Date: "2026-11-01T10:00:00-05:00", Name: "Ana Pérez", DocumentID: "111111", Phone: "3001112233",
+		Email: "ana@mail.com", Department: "Córdoba", City: "Montería", Neighborhood: "Centro", Address: "Calle 1 # 2-3"}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("solo cuenta el envío con guía y sin cancelar: %+v", got)
 	}
 }

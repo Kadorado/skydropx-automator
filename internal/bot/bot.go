@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"skydropx-automator/internal/customers"
 	"skydropx-automator/internal/domain"
 	"skydropx-automator/internal/parser"
 	"skydropx-automator/internal/settings"
@@ -23,14 +24,15 @@ import (
 
 type Options struct {
 	Token          string
-	APIBase        string          // vacío = API oficial de Telegram
-	AllowedChatIDs []int64         // chats autorizados (tú y tu vendedor)
-	AdminChatIDs   []int64         // grupo donde se publica cada guía lista
-	GestionChatIDs []int64         // grupo privado que recibe las órdenes nuevas con el botón de generar guía y usa /imprimir
-	DefaultValor   float64         // valor unitario si el mensaje no trae "Valor:"
-	StatePath      string          // archivo JSON con offset y órdenes pendientes
-	CheckEvery     time.Duration   // cada cuánto revisar si hay guías nuevas
-	Settings       *settings.Store // comisión del vendedor (se cambia con /comision)
+	APIBase        string           // vacío = API oficial de Telegram
+	AllowedChatIDs []int64          // chats autorizados (tú y tu vendedor)
+	AdminChatIDs   []int64          // grupo donde se publica cada guía lista
+	GestionChatIDs []int64          // grupo privado que recibe las órdenes nuevas con el botón de generar guía y usa /imprimir
+	DefaultValor   float64          // valor unitario si el mensaje no trae "Valor:"
+	StatePath      string           // archivo JSON con offset y órdenes pendientes
+	CheckEvery     time.Duration    // cada cuánto revisar si hay guías nuevas
+	Settings       *settings.Store  // comisión del vendedor (se cambia con /comision)
+	Customers      *customers.Store // base de clientes en MongoDB (nil si MONGODB_URI no está configurada)
 }
 
 type Bot struct {
@@ -116,6 +118,18 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			b.comandoNovedades(ctx, chatID)
 			return
 		}
+		if strings.HasPrefix(text, "/clientes") {
+			b.customersCommand(ctx, chatID, text)
+			return
+		}
+		if strings.HasPrefix(text, "/autoriza") {
+			b.consentCommand(ctx, chatID, sender, text)
+			return
+		}
+		if strings.HasPrefix(text, "/baja") {
+			b.optOutCommand(ctx, chatID, text)
+			return
+		}
 		if strings.HasPrefix(text, "/cliente") {
 			b.comandoCliente(ctx, chatID, text)
 			return
@@ -155,7 +169,8 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 	// La comisión y los resúmenes solo se manejan desde el grupo de gestión.
 	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") ||
 		strings.HasPrefix(text, "/deuda") || strings.HasPrefix(text, "/pago") ||
-		strings.HasPrefix(text, "/publicidad") {
+		strings.HasPrefix(text, "/publicidad") || strings.HasPrefix(text, "/clientes") || strings.HasPrefix(text, "/autoriza") ||
+		strings.HasPrefix(text, "/baja") {
 		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
 		return
 	}
@@ -311,6 +326,9 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 		html.EscapeString(data.Nombre), html.EscapeString(data.Ciudad), html.EscapeString(data.Departamento),
 		formatCOP(data.ValorUnitario), b.guiaDestino(),
 	)
+	if !res.IsMock {
+		b.recordCustomer(ctx, data, senderOrChat(sender, chatID))
+	}
 	msg += advertenciaVendedor(hist)
 	if res.IsMock {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"

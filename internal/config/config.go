@@ -18,6 +18,10 @@ type Config struct {
 	SkydropxWebhookSecret string
 	SkydropxWebhookHeader string
 
+	// Base de clientes en MongoDB (Atlas). Sin MONGODB_URI no se guardan clientes.
+	MongoURI      string
+	MongoDatabase string
+
 	// Dirección de origen guardada en Skydropx (Mis direcciones): por ID o, si no, por alias.
 	OriginAddressTemplateID string
 	OriginAddressAlias      string
@@ -65,6 +69,9 @@ func Load() Config {
 
 		SkydropxWebhookSecret: getEnv("SKYDROPX_WEBHOOK_SECRET", ""),
 		SkydropxWebhookHeader: getEnv("SKYDROPX_WEBHOOK_HEADER", "Authorization"),
+
+		MongoURI:      getEnv("MONGODB_URI", ""),
+		MongoDatabase: getEnv("MONGODB_DB", "skydropx"),
 
 		OriginAddressTemplateID: getEnv("ORIGIN_ADDRESS_TEMPLATE_ID", ""),
 		OriginAddressAlias:      getEnv("ORIGIN_ADDRESS_ALIAS", "belu"),

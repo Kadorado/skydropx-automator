@@ -24,6 +24,8 @@ var (
 	reCorreo       = regexp.MustCompile(`(?im)^\s*(?:correo(?:\s+electr[oó]nico)?|email|e-mail)\s*:\s*([^\s]+)$`)
 	reCantidad     = regexp.MustCompile(`(?im)^\s*(?:cantidad|cant|unidades|paquetes)\s*:\s*(\d+)`)
 	reCodigoPostal = regexp.MustCompile(`(?im)^\s*(?:c[oó]digo\s+postal|cod(?:igo)?\.?\s*postal|cp)\s*:\s*(\d{5,6})\b`)
+	reAutoriza     = regexp.MustCompile(`(?im)^\s*(?:autoriza(?:\s+(?:datos|tratamiento(?:\s+de\s+datos)?))?|acepta\s+datos|autorizaci[oó]n(?:\s+de\s+datos)?)\s*:\s*(.+)$`)
+	reFuente       = regexp.MustCompile(`(?im)^\s*(?:fuente|origen|lleg[oó]\s+por|canal)\s*:\s*(.+)$`)
 	reValor        = regexp.MustCompile(`(?im)^\s*(?:valor(?:\s+unitario)?|precio(?:\s+unitario)?)\s*:\s*\$?\s*([\d][\d.,]*)`)
 )
 
@@ -62,6 +64,17 @@ func ParseWhatsAppMessage(raw string) domain.ParseResponse {
 		data.Direccion = cleanSpaces(m[1])
 	}
 
+	if m := reAutoriza.FindStringSubmatch(raw); len(m) > 1 {
+		switch strings.Trim(strings.ToLower(cleanSpaces(m[1])), ".!*_ ") {
+		case "si", "sí", "s", "x", "yes", "acepta", "autoriza", "ok":
+			data.AutorizaDatos = "si"
+		case "no", "n":
+			data.AutorizaDatos = "no"
+		}
+	}
+	if m := reFuente.FindStringSubmatch(raw); len(m) > 1 {
+		data.Fuente = strings.ToLower(strings.Trim(cleanSpaces(m[1]), ".*_ "))
+	}
 	if m := reCorreo.FindStringSubmatch(raw); len(m) > 1 {
 		email := strings.ToLower(cleanSpaces(m[1]))
 		if _, err := mail.ParseAddress(email); err == nil {

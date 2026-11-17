@@ -33,6 +33,7 @@ type fakeAPIs struct {
 	sinSaldo  bool     // si es true, crear el envío responde "Fondos insuficientes"
 	caption   string
 	srvURL    string
+	messages  []string // textos de sendMessage
 }
 
 func (f *fakeAPIs) handler() http.Handler {
@@ -61,6 +62,13 @@ func (f *fakeAPIs) handler() http.Handler {
 		_, _ = io.WriteString(w, `{"ok":true,"result":true}`)
 	})
 	mux.HandleFunc("POST /botTOKEN/sendMessage", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text string `json:"text"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.messages = append(f.messages, body.Text)
+		f.mu.Unlock()
 		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
 	})
 	mux.HandleFunc("POST /botTOKEN/sendDocument", func(w http.ResponseWriter, r *http.Request) {

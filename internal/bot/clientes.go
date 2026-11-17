@@ -92,6 +92,10 @@ func advertenciaVendedor(h historialCliente) string {
 
 // comandoCliente atiende /cliente <cédula o teléfono>: el historial completo de esa persona.
 func (b *Bot) comandoCliente(ctx context.Context, chatID int64, text string) {
+	if strings.HasPrefix(text, "/clientes") {
+		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
+		return
+	}
 	f := strings.Fields(strings.TrimPrefix(text, "/cliente"))
 	if len(f) != 1 || (skydropx.ClaveDocumento(f[0]) == "" && skydropx.ClaveTelefono(f[0]) == "") {
 		b.say(ctx, chatID, "Escribe la cédula o el teléfono. Ejemplo: <code>/cliente 1234567890</code>")

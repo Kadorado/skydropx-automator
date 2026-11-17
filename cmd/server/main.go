@@ -11,6 +11,7 @@ import (
 	"skydropx-automator/internal/auth"
 	"skydropx-automator/internal/bot"
 	"skydropx-automator/internal/config"
+	"skydropx-automator/internal/customers"
 	"skydropx-automator/internal/handlers"
 	"skydropx-automator/internal/settings"
 	"skydropx-automator/internal/skydropx"
@@ -34,6 +35,21 @@ func main() {
 	mux.HandleFunc("POST /login", guard.LoginPage)
 	mux.HandleFunc("GET /logout", guard.Logout)
 
+	// La base de clientes es opcional: si MongoDB no responde, el bot sigue funcionando sin ella.
+	var clientes *customers.Store
+	if cfg.MongoURI != "" {
+		store, closeMongo, err := customers.OpenMongo(context.Background(), cfg.MongoURI, cfg.MongoDatabase)
+		if err != nil {
+			log.Printf("Base de clientes desactivada: %v", err)
+		} else {
+			clientes = store
+			defer func() { _ = closeMongo(context.Background()) }()
+			log.Printf("Base de clientes activa (MongoDB, base %q)", cfg.MongoDatabase)
+		}
+	} else {
+		log.Println("Base de clientes desactivada: MONGODB_URI no está configurada.")
+	}
+
 	if cfg.TelegramToken != "" {
 		tgBot, err := bot.New(bot.Options{
 			Token:          cfg.TelegramToken,
@@ -45,6 +61,7 @@ func main() {
 			StatePath:      cfg.BotStatePath,
 			CheckEvery:     time.Duration(cfg.GuiaCheckMinutes) * time.Minute,
 			Settings:       ajustes,
+			Customers:      clientes,
 		}, client)
 		if err != nil {
 			log.Fatalf("Bot de Telegram: %v", err)

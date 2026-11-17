@@ -77,7 +77,7 @@ func (c *Client) ListShipments(ctx context.Context) (ShipmentList, error) {
 	if !c.listCachedAt.IsZero() && time.Since(c.listCachedAt) < shipmentListTTL {
 		return c.listCache, nil
 	}
-	out, err := c.fetchShipments(ctx)
+	out, err := c.fetchShipments(ctx, maxShipmentPages)
 	if err != nil {
 		return out, err
 	}
@@ -92,8 +92,8 @@ func (c *Client) forgetShipmentList() {
 	c.listMu.Unlock()
 }
 
-// fetchShipments descarga todas las páginas, con una pausa entre ellas para respetar el límite de la API.
-func (c *Client) fetchShipments(ctx context.Context) (ShipmentList, error) {
+// fetchShipments descarga hasta maxPages páginas, con una pausa entre ellas para respetar el límite de la API.
+func (c *Client) fetchShipments(ctx context.Context, maxPages int) (ShipmentList, error) {
 	var out ShipmentList
 	seenIncluded := map[string]bool{}
 	for page := 1; ; page++ {
@@ -138,7 +138,7 @@ func (c *Client) fetchShipments(ctx context.Context) (ShipmentList, error) {
 		if len(raw.Data) == 0 || page >= raw.Meta.TotalPages {
 			break
 		}
-		if page >= maxShipmentPages {
+		if page >= maxPages {
 			out.Truncated = true
 			break
 		}

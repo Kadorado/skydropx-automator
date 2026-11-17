@@ -18,6 +18,10 @@ type ShipmentData struct {
 	// ValorUnitario en COP por unidad; el valor declarado del paquete = ValorUnitario × Cantidad.
 	ValorUnitario float64 `json:"valor_unitario"`
 	Referencia    string  `json:"referencia"`
+	// AutorizaDatos es la respuesta del cliente a usar sus datos para publicidad: "si", "no" o vacío.
+	AutorizaDatos string `json:"autoriza_datos,omitempty"`
+	// Fuente es de dónde llegó el cliente (facebook, whatsapp, referido…), en minúsculas; vacío si no se indicó.
+	Fuente string `json:"fuente,omitempty"`
 }
 
 type ParseRequest struct {
