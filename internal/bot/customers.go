@@ -459,8 +459,9 @@ func (b *Bot) optOutCommand(ctx context.Context, chatID int64, text string) {
 	b.say(ctx, chatID, fmt.Sprintf("🚫 <b>%s</b> quedó dado de baja: no se le debe enviar más publicidad. Queda constancia de la fecha.", html.EscapeString(c.Name)))
 }
 
-// backupHour is when the weekly backup of the customer list is sent, on Mondays (Colombia time).
-const backupHour = 7
+// backupHour is when the weekly backup of the customer list is sent, on Mondays (Colombia time): the
+// first of the morning messages.
+const backupHour = morningHour
 
 func (s *State) backupDue(day string) (bool, error) {
 	s.mu.Lock()

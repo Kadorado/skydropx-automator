@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"skydropx-automator/internal/config"
 )
@@ -96,5 +97,27 @@ func TestRecipientsFromList(t *testing.T) {
 		Email: "ana@mail.com", Department: "Córdoba", City: "Montería", Neighborhood: "Centro", Address: "Calle 1 # 2-3"}
 	if len(got) != 1 || got[0] != want {
 		t.Fatalf("solo cuenta el envío con guía y sin cancelar: %+v", got)
+	}
+}
+
+func TestUndispatchedCandidates(t *testing.T) {
+	list := ShipmentList{
+		Data: []json.RawMessage{
+			json.RawMessage(`{"id":"s2","attributes":{"created_at":"2026-11-14T17:50:00-05:00","master_tracking_number":"G2","carrier_name":"interrapidisimo"},"relationships":{"address_to":{"data":{"id":"a1"}}}}`),
+			json.RawMessage(`{"id":"s1","attributes":{"created_at":"2026-11-13T18:10:00-05:00","master_tracking_number":"G1","carrier_name":"interrapidisimo"},"relationships":{"address_to":{"data":{"id":"a1"}}}}`),
+			json.RawMessage(`{"id":"s3","attributes":{"created_at":"2026-11-14T10:00:00-05:00","master_tracking_number":"G3","workflow_status":"cancelled"}}`),
+			json.RawMessage(`{"id":"s4","attributes":{"created_at":"2026-11-14T10:00:00-05:00","master_tracking_number":""}}`),
+			json.RawMessage(`{"id":"s5","attributes":{"created_at":"2026-10-01T10:00:00-05:00","master_tracking_number":"G5"}}`),
+		},
+		Included: []json.RawMessage{
+			json.RawMessage(`{"id":"a1","type":"address","attributes":{"name":"Ana Pérez","area_level1":"Córdoba","area_level2":"Montería"}}`),
+		},
+	}
+	got := undispatchedCandidates(list, time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC))
+	if len(got) != 2 || got[0].Tracking != "G1" || got[1].Tracking != "G2" {
+		t.Fatalf("labels in the window, not cancelled, oldest first: %+v", got)
+	}
+	if got[0].Name != "Ana Pérez" || got[0].City != "Montería" || got[0].Carrier != "interrapidisimo" {
+		t.Fatalf("%+v", got[0])
 	}
 }

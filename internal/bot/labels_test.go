@@ -23,18 +23,20 @@ import (
 
 // fakeAPIs simula Telegram y Skydropx en un solo servidor y registra lo que el bot envía.
 type fakeAPIs struct {
-	mu        sync.Mutex
-	edits     []string // textos de editMessageText
-	buttons   []string // datos de los botones del último mensaje editado
-	shipments int      // veces que se creó un envío
-	document  []byte   // PDF enviado con sendDocument
-	alias     []string // alias de las direcciones guardadas
-	saldo     float64  // saldo que devuelve /finance/credits
-	sinSaldo  bool     // si es true, crear el envío responde "Fondos insuficientes"
-	caption   string
-	srvURL    string
-	messages  []string // textos de sendMessage
-	fileData  []byte   // file that getFile + download return
+	mu           sync.Mutex
+	edits        []string // textos de editMessageText
+	buttons      []string // datos de los botones del último mensaje editado
+	shipments    int      // veces que se creó un envío
+	document     []byte   // PDF enviado con sendDocument
+	alias        []string // alias de las direcciones guardadas
+	saldo        float64  // saldo que devuelve /finance/credits
+	sinSaldo     bool     // si es true, crear el envío responde "Fondos insuficientes"
+	caption      string
+	srvURL       string
+	messages     []string          // textos de sendMessage
+	fileData     []byte            // file that getFile + download return
+	shipmentList string            // body of GET /api/v1/shipments (one page); empty = 5 labels of today
+	tracking     map[string]string // tracking number -> last status of its tracking
 }
 
 func (f *fakeAPIs) handler() http.Handler {
@@ -71,6 +73,16 @@ func (f *fakeAPIs) handler() http.Handler {
 		f.messages = append(f.messages, body.Text)
 		f.mu.Unlock()
 		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
+	})
+	mux.HandleFunc("GET /api/v1/shipments/tracking", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		status := f.tracking[r.URL.Query().Get("tracking_number")]
+		f.mu.Unlock()
+		events := `{"attributes":{"description":"Guía creada","status":"created","date":"2026-11-13T18:10:00-05:00"}}`
+		if status != "created" && status != "" {
+			events += `,{"attributes":{"description":"Recibido en oficina","status":"` + status + `","date":"2026-11-14T09:00:00-05:00"}}`
+		}
+		_, _ = io.WriteString(w, `{"data":[`+events+`]}`)
 	})
 	mux.HandleFunc("POST /botTOKEN/getFile", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"ok":true,"result":{"file_path":"documents/file.json"}}`)
@@ -139,6 +151,13 @@ func (f *fakeAPIs) handler() http.Handler {
 		_, _ = io.WriteString(w, `{"data":{"id":"shp-1","attributes":{}}}`) // la guía aún no está lista
 	})
 	mux.HandleFunc("GET /api/v1/shipments", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		custom := f.shipmentList
+		f.mu.Unlock()
+		if custom != "" {
+			_, _ = io.WriteString(w, custom)
+			return
+		}
 		hoy := time.Now().In(colombiaTZ).Format(time.RFC3339)
 		var data, inc []string
 		for i := 1; i <= 5; i++ {

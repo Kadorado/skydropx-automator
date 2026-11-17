@@ -57,6 +57,9 @@ type State struct {
 	// Day (YYYY-MM-DD) of the last automatic backup of the customer list.
 	LastCustomerBackup string `json:"last_customer_backup,omitempty"`
 
+	// Day (YYYY-MM-DD) of the last morning reminder of labels left to dispatch.
+	LastDispatchReminder string `json:"last_dispatch_reminder,omitempty"`
+
 	// Último día (AAAA-MM-DD) en que se mandó cada resumen automático.
 	UltimoResumenDiario  string `json:"ultimo_resumen_diario,omitempty"`
 	UltimoResumenSemanal string `json:"ultimo_resumen_semanal,omitempty"`

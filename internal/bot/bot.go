@@ -128,6 +128,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			b.customersCommand(ctx, chatID, text)
 			return
 		}
+		if strings.HasPrefix(text, "/despachos") {
+			b.dispatchCommand(ctx, chatID)
+			return
+		}
 		if strings.HasPrefix(text, "/autoriza") {
 			b.consentCommand(ctx, chatID, sender, text)
 			return
@@ -175,7 +179,7 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 	// La comisión y los resúmenes solo se manejan desde el grupo de gestión.
 	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") ||
 		strings.HasPrefix(text, "/deuda") || strings.HasPrefix(text, "/pago") ||
-		strings.HasPrefix(text, "/publicidad") || strings.HasPrefix(text, "/clientes") || strings.HasPrefix(text, "/autoriza") ||
+		strings.HasPrefix(text, "/publicidad") || strings.HasPrefix(text, "/clientes") || strings.HasPrefix(text, "/autoriza") || strings.HasPrefix(text, "/despachos") ||
 		strings.HasPrefix(text, "/baja") {
 		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
 		return

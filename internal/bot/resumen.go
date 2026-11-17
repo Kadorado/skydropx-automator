@@ -14,8 +14,8 @@ import (
 
 // Horas (de Colombia) de los resúmenes automáticos en el grupo de gestión.
 const (
-	horaResumenDiario  = 20 // cada noche: lo de hoy y lo que va del mes
-	horaResumenSemanal = 8  // los lunes: la semana anterior
+	horaResumenDiario  = 20          // cada noche: lo de hoy y lo que va del mes
+	horaResumenSemanal = morningHour // los lunes: la semana anterior
 )
 
 // watchResumenes manda el resumen diario y el semanal. Revisa cada pocos minutos y recuerda el último
@@ -27,12 +27,16 @@ func (b *Bot) watchResumenes(ctx context.Context) {
 	for {
 		now := time.Now().In(colombiaTZ)
 		day := now.Format("2006-01-02")
+		// Mañana, siempre en este orden: respaldo y resumen semanal (lunes), y al final lo que falta
+		// por despachar (días hábiles), que es lo que hay que hacer y queda de último en el chat.
+		b.backupIfDue(ctx, now)
 		if now.Weekday() == time.Monday && now.Hour() >= horaResumenSemanal {
 			if ok, _ := b.st.resumenPendiente(true, day); ok {
 				b.enviarResumen(ctx, true)
 			}
 		}
-		b.backupIfDue(ctx, now)
+		b.dispatchReminderIfDue(ctx, now)
+		// Noche: el resumen del día.
 		if now.Hour() >= horaResumenDiario {
 			if ok, _ := b.st.resumenPendiente(false, day); ok {
 				b.enviarResumen(ctx, false)

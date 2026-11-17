@@ -16,12 +16,18 @@ const ayudaGestion = `📌 <b>GRUPO DE GESTIÓN — Comandos y avisos</b>
 /imprimir → guías de hoy en hojas carta, 4 por hoja
 /imprimir 3 → guías de los últimos 3 días (hasta 15). Útil después de un festivo
 
+⏰ <b>MENSAJES AUTOMÁTICOS</b> (llegan en este orden)
+8 a. m., lunes: 🗄️ respaldo de clientes y 📊 resumen de la semana
+8 a. m., lunes a sábado sin festivos: 📦 guías por despachar (solo si hay alguna)
+8 p. m., todos los días: 📊 resumen del día
+Oficina de Interrapidísimo: lunes a viernes hasta las 6:30 p. m., sábados hasta las 5 p. m.; domingos y festivos cerrada.
+
 📊 <b>RESÚMENES</b>
 /resumen → lo de hoy y lo que va del mes
 /resumen semana → la semana anterior (lunes a domingo)
-Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
 
 📋 <b>NOVEDADES PARA GESTIONAR</b>
+/despachos → guías creadas que todavía no se han llevado a Interrapidísimo
 /novedades → envíos de los últimos 45 días que hay que gestionar con el cliente: en devolución o sin cobrar, intentos de entrega fallidos, en oficina y con novedad. Trae teléfono, ciudad, guía y último evento.
 /guia 240012345678 → estado de esa guía, últimos eventos y cuánto falta por cobrar
 /cliente 1234567890 → historial de un cliente por cédula o teléfono: qué pagó, qué devolvió y si tardó en recoger en oficina
@@ -29,7 +35,7 @@ Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
 👥 <b>BASE DE CLIENTES</b>
 /clientes → resumen y archivo para Excel con todos los clientes
 /clientes migrar → traer los clientes de los envíos anteriores en Skydropx (se hace una vez; si se repite no duplica)
-/clientes respaldo → copia completa de la base (llega sola cada lunes a las 7 a. m.); para recuperar, responde a ese archivo con /clientes restaurar
+/clientes respaldo → copia completa de la base; para recuperar, responde a ese archivo con /clientes restaurar
 /autoriza 3001234567 respondió SÍ por WhatsApp → registrar que el cliente autorizó publicidad
 /baja 3001234567 → el cliente no quiere más mensajes
 Cada pedido nuevo guarda al cliente solo; si el pedido trae "Autoriza datos: SÍ", queda autorizado, y "Fuente:" dice de dónde llegó.
@@ -117,6 +123,7 @@ Aquí llega cada guía lista para que se la reenvíes al comprador:
 // Menús de comandos de cada grupo (lo que Telegram sugiere al escribir "/").
 var (
 	comandosGestion = []telegram.Command{
+		{Command: "despachos", Description: "Guías que faltan por llevar a Interrapidísimo"},
 		{Command: "novedades", Description: "Envíos para gestionar: devoluciones, intentos fallidos, oficina"},
 		{Command: "guia", Description: "Estado de una guía (/guia 240012345678)"},
 		{Command: "cliente", Description: "Historial de un cliente por cédula o teléfono"},
