@@ -231,6 +231,7 @@ func (b *Bot) sayGestion(ctx context.Context, msg string) {
 
 const ayudaClientes = `<code>/clientes</code> → resumen de la base y el archivo para Excel
 <code>/clientes migrar</code> → traer una vez los clientes de los envíos anteriores en Skydropx
+<code>/clientes respaldo</code> → copia completa de la base (también llega sola cada lunes)
 <code>/autoriza 3001234567 respondió SÍ por WhatsApp</code> → registrar que el cliente autorizó (cédula o teléfono)
 <code>/baja 3001234567</code> → el cliente no quiere más mensajes`
 
@@ -240,9 +241,20 @@ func (b *Bot) customersCommand(ctx context.Context, chatID int64, text string) {
 		b.say(ctx, chatID, b.notConnectedText())
 		return
 	}
-	if args := strings.Fields(strings.TrimPrefix(text, "/clientes")); len(args) > 0 && strings.EqualFold(args[0], "migrar") {
-		b.migrateCustomers(ctx, chatID)
-		return
+	if args := strings.Fields(strings.TrimPrefix(text, "/clientes")); len(args) > 0 {
+		switch strings.ToLower(args[0]) {
+		case "migrar":
+			b.migrateCustomers(ctx, chatID)
+			return
+		case "respaldo":
+			if err := b.sendBackup(ctx, chatID); err != nil {
+				b.say(ctx, chatID, "⚠️ No se pudo hacer el respaldo: "+html.EscapeString(sanitizeReason(err.Error())))
+			}
+			return
+		case "restaurar": // without a file: restoreCommand handles the ones with a file
+			b.say(ctx, chatID, restoreHowTo)
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -445,4 +457,128 @@ func (b *Bot) optOutCommand(ctx context.Context, chatID int64, text string) {
 		return
 	}
 	b.say(ctx, chatID, fmt.Sprintf("🚫 <b>%s</b> quedó dado de baja: no se le debe enviar más publicidad. Queda constancia de la fecha.", html.EscapeString(c.Name)))
+}
+
+// backupHour is when the weekly backup of the customer list is sent, on Mondays (Colombia time).
+const backupHour = 7
+
+func (s *State) backupDue(day string) (bool, error) {
+	s.mu.Lock()
+	if s.LastCustomerBackup == day {
+		s.mu.Unlock()
+		return false, nil
+	}
+	s.LastCustomerBackup = day
+	s.mu.Unlock()
+	return true, s.save()
+}
+
+// backupIfDue sends the weekly backup to the gestión group on Monday mornings. A failure is reported:
+// a backup that silently stops is worse than none.
+func (b *Bot) backupIfDue(ctx context.Context, now time.Time) {
+	if b.opts.Customers == nil || now.Weekday() != time.Monday || now.Hour() < backupHour {
+		return
+	}
+	if ok, _ := b.st.backupDue(now.Format("2006-01-02")); !ok {
+		return
+	}
+	for _, id := range b.gestionChats() {
+		if err := b.sendBackup(ctx, id); err != nil {
+			log.Printf("bot: weekly customer backup failed: %v", err)
+			b.say(ctx, id, "⚠️ <b>No se pudo hacer el respaldo semanal de clientes</b>\n❓ Motivo: "+html.EscapeString(sanitizeReason(err.Error()))+
+				"\n\nHazlo a mano con <code>/clientes respaldo</code> cuando MongoDB responda.")
+		}
+	}
+}
+
+// sendBackup sends a full copy of the customer list as a JSON file.
+func (b *Bot) sendBackup(ctx context.Context, chatID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	backup, err := b.opts.Customers.Backup(ctx)
+	if err != nil {
+		return err
+	}
+	orders := 0
+	for _, c := range backup.Customers {
+		orders += len(c.Orders)
+	}
+	var buf bytes.Buffer
+	if err := customers.WriteBackup(&buf, backup); err != nil {
+		return err
+	}
+	name := "clientes-respaldo-" + time.Now().In(colombiaTZ).Format("2006-01-02") + ".json"
+	caption := fmt.Sprintf("🗄️ <b>Respaldo de la base de clientes</b>\n👤 %d clientes · 📦 %d pedidos\n\n"+
+		"Guárdalo. Si algún día se pierden clientes, responde a este archivo con <code>/clientes restaurar</code>.", len(backup.Customers), orders)
+	return b.tg.SendDocument(ctx, chatID, name, buf.Bytes(), caption)
+}
+
+const restoreHowTo = `Para restaurar, <b>responde al archivo del respaldo</b> (el <code>clientes-respaldo-….json</code>) con <code>/clientes restaurar</code>, o envía el archivo con ese texto.
+
+Solo recupera los clientes que falten: nunca borra ni cambia los que ya están.`
+
+// isRestoreCommand reports a "/clientes restaurar" sent with a file or replying to one.
+func isRestoreCommand(m *telegram.Message) bool {
+	text := strings.TrimSpace(m.Text)
+	if m.Document != nil {
+		text = strings.TrimSpace(m.Caption)
+	}
+	f := strings.Fields(strings.ToLower(text))
+	if len(f) < 2 || (f[0] != "/clientes" && !strings.HasPrefix(f[0], "/clientes@")) || f[1] != "restaurar" {
+		return false
+	}
+	return m.Document != nil || (m.ReplyTo != nil && m.ReplyTo.Document != nil)
+}
+
+// restoreCommand puts back the customers of a backup file that are missing from the list.
+func (b *Bot) restoreCommand(ctx context.Context, m *telegram.Message) {
+	chatID := m.Chat.ID
+	if !b.isGestion(chatID) {
+		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
+		return
+	}
+	if b.opts.Customers == nil {
+		b.say(ctx, chatID, b.notConnectedText())
+		return
+	}
+	doc := m.Document
+	if doc == nil {
+		doc = m.ReplyTo.Document
+	}
+	if doc.FileSize > telegram.MaxDownloadSize {
+		b.say(ctx, chatID, "⚠️ El archivo es muy grande para que el bot lo lea (máximo 20 MB).")
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	data, err := b.tg.DownloadFile(ctx, doc.FileID)
+	if err != nil {
+		b.say(ctx, chatID, "⚠️ No pude descargar el archivo de Telegram: "+html.EscapeString(err.Error()))
+		return
+	}
+	backup, err := customers.ReadBackup(bytes.NewReader(data))
+	if err != nil {
+		b.say(ctx, chatID, "⚠️ Ese archivo no es un respaldo de clientes. Usa el <code>clientes-respaldo-….json</code> que manda el bot (el Excel no sirve para restaurar).")
+		return
+	}
+	res, err := b.opts.Customers.Restore(ctx, backup)
+	if err != nil {
+		b.say(ctx, chatID, "⚠️ La restauración se cortó (puedes repetirla, no duplica): "+html.EscapeString(sanitizeReason(err.Error())))
+		return
+	}
+	b.say(ctx, chatID, restoreText(res, backup.CreatedAt))
+}
+
+// restoreText is the answer to "/clientes restaurar".
+func restoreText(r customers.RestoreResult, createdAt time.Time) string {
+	var b strings.Builder
+	b.WriteString("✅ <b>RESTAURACIÓN TERMINADA</b>\n\n")
+	fmt.Fprintf(&b, "🗄️ Respaldo del %s: %d clientes\n", fechaHora(createdAt), r.InBackup)
+	fmt.Fprintf(&b, "♻️ Recuperados: <b>%d</b>\n", r.Restored)
+	fmt.Fprintf(&b, "✔️ Ya estaban (no se tocaron): %d\n", r.AlreadyThere)
+	if r.Conflicts > 0 {
+		fmt.Fprintf(&b, "⚠️ No se recuperaron porque su cédula ya la tiene otro cliente: %d\n", r.Conflicts)
+	}
+	b.WriteString("\n<i>La restauración nunca borra ni cambia clientes que ya existen.</i>")
+	return b.String()
 }

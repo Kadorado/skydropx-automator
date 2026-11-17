@@ -34,6 +34,7 @@ type fakeAPIs struct {
 	caption   string
 	srvURL    string
 	messages  []string // textos de sendMessage
+	fileData  []byte   // file that getFile + download return
 }
 
 func (f *fakeAPIs) handler() http.Handler {
@@ -70,6 +71,14 @@ func (f *fakeAPIs) handler() http.Handler {
 		f.messages = append(f.messages, body.Text)
 		f.mu.Unlock()
 		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
+	})
+	mux.HandleFunc("POST /botTOKEN/getFile", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"file_path":"documents/file.json"}}`)
+	})
+	mux.HandleFunc("GET /file/botTOKEN/documents/file.json", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		_, _ = w.Write(f.fileData)
 	})
 	mux.HandleFunc("POST /botTOKEN/sendDocument", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseMultipartForm(10 << 20); err == nil {

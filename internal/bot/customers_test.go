@@ -8,6 +8,7 @@ import (
 
 	"skydropx-automator/internal/customers"
 	"skydropx-automator/internal/domain"
+	"skydropx-automator/internal/telegram"
 )
 
 func TestCustomerListFromOrders(t *testing.T) {
@@ -157,5 +158,94 @@ func TestCustomerListNotConfiguredIsSilent(t *testing.T) {
 	b.recordCustomer(context.Background(), domain.ShipmentData{Nombre: "Ana", Telefono: "3001112233"}, "o1", "V")
 	if len(f.messages) != 0 || len(b.st.snapshotUnsaved()) != 0 {
 		t.Fatalf("without MONGODB_URI nothing is said nor kept: %v", f.messages)
+	}
+}
+
+func TestBackupAndRestore(t *testing.T) {
+	b, f := newTestBot(t)
+	ctx := context.Background()
+	b.opts.GestionChatIDs = []int64{-100}
+	store := customers.NewMemoryStore()
+	b.opts.Customers = store
+	b.recordCustomer(ctx, domain.ShipmentData{Nombre: "Ana Pérez", Documento: "111111", Telefono: "3001112233", Cantidad: 2, AutorizaDatos: "si"}, "o1", "V")
+	b.recordCustomer(ctx, domain.ShipmentData{Nombre: "Luis", Telefono: "3105556677"}, "o2", "V")
+
+	b.customersCommand(ctx, -100, "/clientes respaldo")
+	if !strings.Contains(f.caption, "2 clientes · 📦 2 pedidos") || !strings.Contains(f.caption, "/clientes restaurar") {
+		t.Fatalf("caption: %s", f.caption)
+	}
+	backupFile := append([]byte(nil), f.document...)
+
+	// The list is lost: a new, empty database. Restore by replying to the backup file.
+	b.opts.Customers = customers.NewMemoryStore()
+	f.fileData = backupFile
+	reply := &telegram.Message{Chat: telegram.Chat{ID: -100}, Text: "/clientes restaurar",
+		ReplyTo: &telegram.Message{Document: &telegram.Document{FileID: "F1", FileName: "clientes-respaldo.json", FileSize: int64(len(backupFile))}}}
+	if !isRestoreCommand(reply) {
+		t.Fatal("a reply to a file with /clientes restaurar is a restore")
+	}
+	b.restoreCommand(ctx, reply)
+	if last := f.messages[len(f.messages)-1]; !strings.Contains(last, "RESTAURACIÓN TERMINADA") || !strings.Contains(last, "Recuperados: <b>2</b>") {
+		t.Fatalf("restore answer: %s", last)
+	}
+	ana, err := b.opts.Customers.Find(ctx, "111111")
+	if err != nil || !ana.Contactable() || ana.Orders[0].Units != 2 {
+		t.Fatalf("restored: %+v %v", ana, err)
+	}
+
+	// Not a backup (e.g. the Excel): rejected without touching anything.
+	f.fileData = []byte("nombre,cedula\nAna,111111")
+	b.restoreCommand(ctx, reply)
+	if last := f.messages[len(f.messages)-1]; !strings.Contains(last, "no es un respaldo de clientes") {
+		t.Fatalf("wrong file: %s", last)
+	}
+	// Outside the gestión group it does nothing.
+	other := *reply
+	other.Chat.ID = -200
+	b.restoreCommand(ctx, &other)
+	if last := f.messages[len(f.messages)-1]; !strings.Contains(last, "solo funciona en el grupo de gestión") {
+		t.Fatalf("other chat: %s", last)
+	}
+}
+
+func TestIsRestoreCommand(t *testing.T) {
+	doc := &telegram.Document{FileID: "F"}
+	cases := []struct {
+		m    telegram.Message
+		want bool
+	}{
+		{telegram.Message{Caption: "/clientes restaurar", Document: doc}, true},
+		{telegram.Message{Text: "/clientes restaurar", ReplyTo: &telegram.Message{Document: doc}}, true},
+		{telegram.Message{Text: "/clientes@MiBot restaurar", ReplyTo: &telegram.Message{Document: doc}}, true},
+		{telegram.Message{Text: "/clientes restaurar"}, false},                                           // no file: instructions
+		{telegram.Message{Text: "/clientes", ReplyTo: &telegram.Message{Document: doc}}, false},          // another command
+		{telegram.Message{Text: "/clientes restaurar", ReplyTo: &telegram.Message{Text: "hola"}}, false}, // reply without file
+	}
+	for i, c := range cases {
+		if got := isRestoreCommand(&c.m); got != c.want {
+			t.Errorf("case %d: %v", i, got)
+		}
+	}
+}
+
+func TestWeeklyBackup(t *testing.T) {
+	b, f := newTestBot(t)
+	ctx := context.Background()
+	b.opts.GestionChatIDs = []int64{-100}
+	b.opts.Customers = customers.NewMemoryStore()
+	monday := time.Date(2026, 11, 16, 6, 0, 0, 0, colombiaTZ)
+	b.backupIfDue(ctx, monday)                                   // too early
+	b.backupIfDue(ctx, monday.AddDate(0, 0, 1).Add(3*time.Hour)) // Tuesday
+	if f.document != nil {
+		t.Fatal("only Mondays from 7 a. m.")
+	}
+	b.backupIfDue(ctx, monday.Add(2*time.Hour))
+	if !strings.Contains(f.caption, "Respaldo de la base de clientes") {
+		t.Fatalf("monday backup: %q", f.caption)
+	}
+	f.caption = ""
+	b.backupIfDue(ctx, monday.Add(5*time.Hour))
+	if f.caption != "" {
+		t.Fatal("once per Monday")
 	}
 }

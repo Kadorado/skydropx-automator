@@ -214,3 +214,67 @@ func checkMigration(t *testing.T, s *Store) {
 }
 
 func TestMigrationMemory(t *testing.T) { checkMigration(t, NewMemoryStore()) }
+
+// checkBackupRestore backs up src, then restores it into dst, which lost some customers and changed others.
+func checkBackupRestore(t *testing.T, src, dst *Store) {
+	t.Helper()
+	ctx := context.Background()
+	src.since, dst.since = day(1), day(10)
+	_, _ = src.RecordOrder(ctx, Customer{Name: "Ana", DocumentID: "111111", Phone: "3001112233", Source: "facebook",
+		Consent: Consent{Given: true, Evidence: "SÍ"}}, Order{Date: day(2), Units: 2, UnitPrice: 60000, CreatedBy: "V"})
+	_, _ = src.RecordOrder(ctx, Customer{Name: "Ana", DocumentID: "111111"}, Order{Date: day(4), Units: 1})
+	_, _ = src.RecordOrder(ctx, Customer{Name: "Luis", Phone: "3105556677"}, Order{Date: day(3)})
+	_, _ = src.OptOut(ctx, "3105556677")
+	_, _ = src.RecordOrder(ctx, Customer{Name: "Marta", DocumentID: "333333"}, Order{Date: day(3)})
+
+	b, err := src.Backup(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := WriteBackup(&buf, b); err != nil {
+		t.Fatal(err)
+	}
+	b, err = ReadBackup(&buf)
+	if err != nil || len(b.Customers) != 3 || !b.Since.Equal(day(1)) {
+		t.Fatalf("round trip: %d customers, since %v, %v", len(b.Customers), b.Since, err)
+	}
+
+	// dst: Luis bought again after the backup (must stay as is), and Marta's document now belongs to a
+	// customer created another way (conflict). Ana is missing.
+	_, _ = dst.RecordOrder(ctx, Customer{Name: "Luis", Phone: "3105556677"}, Order{Date: day(12)})
+	_, _ = dst.RecordOrder(ctx, Customer{Name: "Marta", Phone: "3150000000"}, Order{Date: day(11)})
+	_, _ = dst.RecordOrder(ctx, Customer{Name: "Marta", DocumentID: "333333", Phone: "3150000000"}, Order{Date: day(12)})
+
+	r, err := dst.Restore(ctx, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r != (RestoreResult{InBackup: 3, Restored: 1, AlreadyThere: 1, Conflicts: 1}) {
+		t.Fatalf("restore: %+v", r)
+	}
+	ana, err := dst.Find(ctx, "111111")
+	if err != nil || !ana.Contactable() || ana.Source != "facebook" || len(ana.Orders) != 2 || ana.Orders[0].UnitPrice != 60000 {
+		t.Fatalf("restored customer must come back complete: %+v %v", ana, err)
+	}
+	luis, _ := dst.Find(ctx, "3105556677")
+	if len(luis.Orders) != 1 || luis.OptOutAt != nil {
+		t.Fatalf("an existing customer is never overwritten: %+v", luis)
+	}
+	if !dst.Since().Equal(day(1)) {
+		t.Fatalf("since must move back to the backup's: %v", dst.Since())
+	}
+	if r, _ := dst.Restore(ctx, b); r.Restored != 0 {
+		t.Fatalf("restoring twice changes nothing: %+v", r)
+	}
+}
+
+func TestBackupRestoreMemory(t *testing.T) { checkBackupRestore(t, NewMemoryStore(), NewMemoryStore()) }
+
+func TestReadBackupRejectsOtherFiles(t *testing.T) {
+	for _, in := range []string{"nombre,cedula\nAna,1", `{"version":9,"customers":[]}`, `{"version":1,"customers":[{"name":"x"}]}`} {
+		if _, err := ReadBackup(strings.NewReader(in)); err == nil {
+			t.Errorf("must reject %q", in)
+		}
+	}
+}

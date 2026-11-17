@@ -27,6 +27,11 @@ type repo interface {
 	setConsent(ctx context.Context, id string, c Consent, now time.Time) (Customer, error)
 	// setOptOut records that the customer doesn't want more messages.
 	setOptOut(ctx context.Context, id string, now time.Time) (Customer, error)
+	// insertIfMissing stores c as is if no customer has its ID (false if one does). It fails with
+	// errDuplicate if another customer already has its document.
+	insertIfMissing(ctx context.Context, c Customer) (bool, error)
+	// restoreSince moves the start of the list back to t if t is earlier, and returns the start.
+	restoreSince(ctx context.Context, t time.Time) (time.Time, error)
 	all(ctx context.Context) ([]Customer, error)
 }
 

@@ -29,6 +29,7 @@ Llegan solos: cada noche a las 8 p. m. y los lunes a las 8 a. m.
 👥 <b>BASE DE CLIENTES</b>
 /clientes → resumen y archivo para Excel con todos los clientes
 /clientes migrar → traer los clientes de los envíos anteriores en Skydropx (se hace una vez; si se repite no duplica)
+/clientes respaldo → copia completa de la base (llega sola cada lunes a las 7 a. m.); para recuperar, responde a ese archivo con /clientes restaurar
 /autoriza 3001234567 respondió SÍ por WhatsApp → registrar que el cliente autorizó publicidad
 /baja 3001234567 → el cliente no quiere más mensajes
 Cada pedido nuevo guarda al cliente solo; si el pedido trae "Autoriza datos: SÍ", queda autorizado, y "Fuente:" dice de dónde llegó.

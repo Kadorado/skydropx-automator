@@ -14,6 +14,7 @@ import (
 // mongoRepo keeps customers in a MongoDB collection.
 type mongoRepo struct {
 	coll *mongo.Collection
+	meta *mongo.Collection
 }
 
 // OpenMongo connects to MongoDB (e.g. Atlas, with a mongodb+srv:// URI), checks the connection and
@@ -41,12 +42,13 @@ func OpenMongo(ctx context.Context, uri, database string) (*Store, func(context.
 		_ = client.Disconnect(context.Background())
 		return nil, nil, fmt.Errorf("creating MongoDB indexes: %w", err)
 	}
-	since, err := startedAt(pingCtx, client.Database(database).Collection("meta"))
+	meta := client.Database(database).Collection("meta")
+	since, err := startedAt(pingCtx, meta)
 	if err != nil {
 		_ = client.Disconnect(context.Background())
 		return nil, nil, fmt.Errorf("reading when the customer list started: %w", err)
 	}
-	return &Store{repo: &mongoRepo{coll: coll}, now: time.Now, since: since}, client.Disconnect, nil
+	return &Store{repo: &mongoRepo{coll: coll, meta: meta}, now: time.Now, since: since}, client.Disconnect, nil
 }
 
 // startedAt returns when the bot first connected to this database, recording it the first time. From
@@ -168,6 +170,32 @@ func (m *mongoRepo) setConsent(ctx context.Context, id string, consent Consent, 
 
 func (m *mongoRepo) setOptOut(ctx context.Context, id string, now time.Time) (Customer, error) {
 	return m.updateOne(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "opt_out_at", Value: now}, {Key: "updated_at", Value: now}}}})
+}
+
+func (m *mongoRepo) insertIfMissing(ctx context.Context, c Customer) (bool, error) {
+	_, err := m.coll.InsertOne(ctx, c)
+	if !mongo.IsDuplicateKeyError(err) {
+		return err == nil, err
+	}
+	// Either the customer exists (same ID: leave it) or its document belongs to another customer.
+	n, cerr := m.coll.CountDocuments(ctx, bson.D{{Key: "_id", Value: c.ID}})
+	if cerr != nil {
+		return false, cerr
+	}
+	if n > 0 {
+		return false, nil
+	}
+	return false, errDuplicate
+}
+
+func (m *mongoRepo) restoreSince(ctx context.Context, t time.Time) (time.Time, error) {
+	var doc struct {
+		StartedAt time.Time `bson:"started_at"`
+	}
+	err := m.meta.FindOneAndUpdate(ctx, bson.D{{Key: "_id", Value: "customers"}},
+		bson.D{{Key: "$min", Value: bson.D{{Key: "started_at", Value: t}}}},
+		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)).Decode(&doc)
+	return doc.StartedAt, err
 }
 
 func (m *mongoRepo) all(ctx context.Context) ([]Customer, error) {

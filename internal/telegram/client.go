@@ -30,7 +30,22 @@ type Message struct {
 	Chat      Chat   `json:"chat"`
 	From      *User  `json:"from"`
 	Text      string `json:"text"`
+
+	// A file sent in the message (Caption is its text), and the message this one replies to.
+	Caption  string    `json:"caption,omitempty"`
+	Document *Document `json:"document,omitempty"`
+	ReplyTo  *Message  `json:"reply_to_message,omitempty"`
 }
+
+// Document is a file attached to a message.
+type Document struct {
+	FileID   string `json:"file_id"`
+	FileName string `json:"file_name"`
+	FileSize int64  `json:"file_size"`
+}
+
+// MaxDownloadSize is the largest file a bot can download from Telegram (20 MB).
+const MaxDownloadSize = 20 << 20
 
 // CallbackQuery llega cuando alguien toca un botón de un mensaje del bot.
 type CallbackQuery struct {
@@ -191,6 +206,39 @@ func (c *Client) SendDocument(ctx context.Context, chatID int64, filename string
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	return c.do(req, "sendDocument", nil)
+}
+
+// DownloadFile downloads a file sent to the bot (up to MaxDownloadSize).
+func (c *Client) DownloadFile(ctx context.Context, fileID string) ([]byte, error) {
+	var f struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := c.call(ctx, "getFile", map[string]any{"file_id": fileID}, &f); err != nil {
+		return nil, err
+	}
+	if f.FilePath == "" {
+		return nil, fmt.Errorf("telegram didn't return the file path")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/file/bot%s/%s", c.base, c.token, f.FilePath), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("telegram file download HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxDownloadSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxDownloadSize {
+		return nil, fmt.Errorf("the file is larger than %d MB", MaxDownloadSize>>20)
+	}
+	return data, nil
 }
 
 // call hace un POST JSON a un método de la API y decodifica "result" en out (si no es nil).

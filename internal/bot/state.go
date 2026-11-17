@@ -54,6 +54,9 @@ type State struct {
 	// Customers that couldn't be saved in the customer list, kept until a retry works.
 	UnsavedCustomers []UnsavedCustomer `json:"unsaved_customers,omitempty"`
 
+	// Day (YYYY-MM-DD) of the last automatic backup of the customer list.
+	LastCustomerBackup string `json:"last_customer_backup,omitempty"`
+
 	// Último día (AAAA-MM-DD) en que se mandó cada resumen automático.
 	UltimoResumenDiario  string `json:"ultimo_resumen_diario,omitempty"`
 	UltimoResumenSemanal string `json:"ultimo_resumen_semanal,omitempty"`

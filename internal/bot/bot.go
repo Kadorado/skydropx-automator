@@ -73,7 +73,11 @@ func (b *Bot) Run(ctx context.Context) {
 		}
 		for _, u := range updates {
 			if u.Message != nil {
-				b.handle(ctx, u.Message.Chat.ID, senderName(u.Message.From), strings.TrimSpace(u.Message.Text))
+				if isRestoreCommand(u.Message) {
+					b.restoreCommand(ctx, u.Message)
+				} else {
+					b.handle(ctx, u.Message.Chat.ID, senderName(u.Message.From), strings.TrimSpace(u.Message.Text))
+				}
 			}
 			if u.CallbackQuery != nil {
 				b.handleCallback(ctx, u.CallbackQuery)

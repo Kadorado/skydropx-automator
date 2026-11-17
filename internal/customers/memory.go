@@ -9,8 +9,9 @@ import (
 // memoryRepo keeps customers in a map. The mutex makes every write atomic, and the document check
 // mirrors MongoDB's unique index.
 type memoryRepo struct {
-	mu   sync.Mutex
-	byID map[string]Customer
+	mu    sync.Mutex
+	byID  map[string]Customer
+	since time.Time
 }
 
 func newMemoryRepo() *memoryRepo { return &memoryRepo{byID: map[string]Customer{}} }
@@ -72,6 +73,32 @@ func (m *memoryRepo) setConsent(_ context.Context, id string, consent Consent, n
 
 func (m *memoryRepo) setOptOut(_ context.Context, id string, now time.Time) (Customer, error) {
 	return m.update(id, func(c *Customer) { c.OptOutAt, c.UpdatedAt = &now, now })
+}
+
+func (m *memoryRepo) insertIfMissing(_ context.Context, c Customer) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.byID[c.ID]; ok {
+		return false, nil
+	}
+	if c.DocumentID != "" {
+		for _, other := range m.byID {
+			if other.DocumentID == c.DocumentID {
+				return false, errDuplicate
+			}
+		}
+	}
+	m.byID[c.ID] = c
+	return true, nil
+}
+
+func (m *memoryRepo) restoreSince(_ context.Context, t time.Time) (time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.since.IsZero() || t.Before(m.since) {
+		m.since = t
+	}
+	return m.since, nil
 }
 
 func (m *memoryRepo) all(_ context.Context) ([]Customer, error) {

@@ -32,6 +32,7 @@ func (b *Bot) watchResumenes(ctx context.Context) {
 				b.enviarResumen(ctx, true)
 			}
 		}
+		b.backupIfDue(ctx, now)
 		if now.Hour() >= horaResumenDiario {
 			if ok, _ := b.st.resumenPendiente(false, day); ok {
 				b.enviarResumen(ctx, false)
