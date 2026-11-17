@@ -50,7 +50,7 @@ func (c *Client) QuoteLabel(ctx context.Context, data domain.ShipmentData) (Labe
 	}
 	postal := strings.TrimSpace(data.PostalCode)
 	if postal == "" {
-		postal = parser.LookupPostalCode(data.City)
+		postal = parser.LookupPostalCode(data.City, data.Department)
 	}
 	if postal == "" {
 		return LabelQuote{}, fmt.Errorf("no tengo código postal para %s. Vuelve a crear la orden con la línea \"Código postal: XXXXXX\"", data.City)

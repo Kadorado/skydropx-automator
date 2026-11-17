@@ -139,7 +139,7 @@ func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) 
 
 	destPostal := strings.TrimSpace(data.PostalCode)
 	if destPostal == "" {
-		destPostal = parser.LookupPostalCode(data.City)
+		destPostal = parser.LookupPostalCode(data.City, data.Department)
 	}
 
 	qty := maxInt(1, data.Quantity)

@@ -118,6 +118,10 @@ func ParseWhatsAppMessage(raw string) domain.ParseResponse {
 
 	if explicitDept != "" {
 		data.Department = explicitDept
+		// With the department known, a name repeated in several departments now resolves.
+		if postal := LookupPostalCode(data.City, data.Department); postal != "" {
+			data.PostalCode = postal
+		}
 	}
 
 	// An explicit postal code replaces the reference one from the city table.

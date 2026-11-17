@@ -1,7 +1,10 @@
 package parser
 
 import (
+	_ "embed"
+	"encoding/csv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"golang.org/x/text/cases"
@@ -16,7 +19,9 @@ type GeoInfo struct {
 	PostalCode string
 }
 
-// Map of main and frequent municipalities in Colombia (normalized key, no accents, lowercase)
+// Map of main and frequent municipalities in Colombia (normalized key, no accents, lowercase).
+// It gives their accented names and aliases; postal codes come from the 4-72 table first,
+// and the ones here are only used when the table doesn't have the city (Bogotá is split by localidad).
 var colombiaCities = map[string]GeoInfo{
 	"quibdo":        {City: "Quibdó", Department: "Chocó", PostalCode: "270001"},
 	"istmina":       {City: "Istmina", Department: "Chocó", PostalCode: "274010"},
@@ -58,45 +63,48 @@ var colombiaCities = map[string]GeoInfo{
 	"popayan":       {City: "Popayán", Department: "Cauca", PostalCode: "190001"},
 	"florencia":     {City: "Florencia", Department: "Caquetá", PostalCode: "180001"},
 	"yopal":         {City: "Yopal", Department: "Casanare", PostalCode: "850001"},
+	"tumaco":        {City: "Tumaco", Department: "Nariño", PostalCode: "528501"},
 }
 
 var colombiaDepartments = map[string]string{
-	"amazonas":           "Amazonas",
-	"antioquia":          "Antioquia",
-	"arauca":             "Arauca",
-	"atlantico":          "Atlántico",
-	"bogota":             "Bogotá D.C.",
-	"bogota dc":          "Bogotá D.C.",
-	"bolivar":            "Bolívar",
-	"boyaca":             "Boyacá",
-	"caldas":             "Caldas",
-	"caqueta":            "Caquetá",
-	"casanare":           "Casanare",
-	"cauca":              "Cauca",
-	"cesar":              "Cesar",
-	"choco":              "Chocó",
-	"cordoba":            "Córdoba",
-	"cundinamarca":       "Cundinamarca",
-	"guainia":            "Guainía",
-	"guaviare":           "Guaviare",
-	"huila":              "Huila",
-	"la guajira":         "La Guajira",
-	"guajira":            "La Guajira",
-	"magdalena":          "Magdalena",
-	"meta":               "Meta",
-	"narino":             "Nariño",
-	"norte de santander": "Norte de Santander",
-	"putumayo":           "Putumayo",
-	"quindio":            "Quindío",
-	"risaralda":          "Risaralda",
-	"san andres":         "San Andrés y Providencia",
-	"santander":          "Santander",
-	"sucre":              "Sucre",
-	"tolima":             "Tolima",
-	"valle":              "Valle del Cauca",
-	"valle del cauca":    "Valle del Cauca",
-	"vaupes":             "Vaupés",
-	"vichada":            "Vichada",
+	"amazonas":                   "Amazonas",
+	"antioquia":                  "Antioquia",
+	"arauca":                     "Arauca",
+	"atlantico":                  "Atlántico",
+	"bogota":                     "Bogotá D.C.",
+	"bogota dc":                  "Bogotá D.C.",
+	"bogota d.c.":                "Bogotá D.C.",
+	"bolivar":                    "Bolívar",
+	"boyaca":                     "Boyacá",
+	"caldas":                     "Caldas",
+	"caqueta":                    "Caquetá",
+	"casanare":                   "Casanare",
+	"cauca":                      "Cauca",
+	"cesar":                      "Cesar",
+	"choco":                      "Chocó",
+	"cordoba":                    "Córdoba",
+	"cundinamarca":               "Cundinamarca",
+	"guainia":                    "Guainía",
+	"guaviare":                   "Guaviare",
+	"huila":                      "Huila",
+	"la guajira":                 "La Guajira",
+	"guajira":                    "La Guajira",
+	"magdalena":                  "Magdalena",
+	"meta":                       "Meta",
+	"narino":                     "Nariño",
+	"norte de santander":         "Norte de Santander",
+	"putumayo":                   "Putumayo",
+	"quindio":                    "Quindío",
+	"risaralda":                  "Risaralda",
+	"san andres":                 "San Andrés y Providencia",
+	"archipielago de san andres": "San Andrés y Providencia",
+	"santander":                  "Santander",
+	"sucre":                      "Sucre",
+	"tolima":                     "Tolima",
+	"valle":                      "Valle del Cauca",
+	"valle del cauca":            "Valle del Cauca",
+	"vaupes":                     "Vaupés",
+	"vichada":                    "Vichada",
 }
 
 func stripAccents(s string) string {
@@ -126,7 +134,7 @@ func ResolveCityAndDept(raw string, titleCaser cases.Caser) (city, dept, postal 
 
 	// 1. Exact match with a known city
 	if info, ok := colombiaCities[normInput]; ok {
-		return info.City, info.Department, info.PostalCode
+		return info.City, info.Department, curatedPostal(normInput, info.Department, info)
 	}
 
 	// 2. Split if it comes as "CITY DEPARTMENT" (e.g. "quibdo choco" or "santa marta magdalena")
@@ -136,20 +144,104 @@ func ResolveCityAndDept(raw string, titleCaser cases.Caser) (city, dept, postal 
 		if strings.HasSuffix(normInput, suffix) {
 			cityPart := strings.TrimSpace(strings.TrimSuffix(normInput, suffix))
 			if info, ok := colombiaCities[cityPart]; ok {
-				return info.City, deptProper, info.PostalCode
+				return info.City, deptProper, curatedPostal(cityPart, deptProper, info)
+			}
+			if m, ok := lookupMunicipality(cityPart, deptProper); ok {
+				return titleCaser.String(strings.ToLower(m.City)), deptProper, m.PostalCode
 			}
 			return titleCaser.String(cityPart), deptProper, ""
 		}
 	}
 
-	// 3. Fallback: capitalize whatever comes without inventing a department if it isn't recognized
+	// 3. Municipality from the 4-72 table, only if its name exists in a single department
+	if m, ok := lookupMunicipality(normInput, ""); ok {
+		return titleCaser.String(strings.ToLower(m.City)), m.Department, m.PostalCode
+	}
+
+	// 4. Fallback: capitalize whatever comes without inventing a department if it isn't recognized
 	return titleCaser.String(strings.ToLower(strings.TrimSpace(raw))), "", ""
 }
 
 // LookupPostalCode tries to get a reference postal code if the user edited the city.
-func LookupPostalCode(city string) string {
-	if info, ok := colombiaCities[normalizeKey(city)]; ok {
-		return info.PostalCode
+// dept may be empty; then a name repeated in several departments gives no code.
+func LookupPostalCode(city, dept string) string {
+	key := normalizeKey(city)
+	if info, ok := colombiaCities[key]; ok {
+		if dept == "" {
+			dept = info.Department
+		}
+		return curatedPostal(key, dept, info)
+	}
+	if m, ok := lookupMunicipality(key, dept); ok {
+		return m.PostalCode
 	}
 	return ""
+}
+
+func curatedPostal(key, dept string, info GeoInfo) string {
+	if m, ok := lookupMunicipality(key, dept); ok {
+		return m.PostalCode
+	}
+	return info.PostalCode
+}
+
+// postal_codes.csv is the 4-72 national table (datos.gov.co, CC BY-SA 4.0), one urban code
+// per municipality. Regenerate it with: go run ./cmd/postalcodes
+//
+//go:embed postal_codes.csv
+var postalCodesCSV string
+
+var (
+	postalOnce    sync.Once
+	postalByCity  map[string][]GeoInfo // normalized municipality -> one entry per department
+	postalByAlias map[string][]GeoInfo // same without the leading article: "banco" -> El Banco
+)
+
+func loadPostalCodes() {
+	postalByCity = map[string][]GeoInfo{}
+	postalByAlias = map[string][]GeoInfo{}
+	records, err := csv.NewReader(strings.NewReader(postalCodesCSV)).ReadAll()
+	if err != nil {
+		panic("postal_codes.csv: " + err.Error())
+	}
+	for _, r := range records[1:] {
+		dept := colombiaDepartments[normalizeKey(r[0])]
+		if dept == "" {
+			dept = r[0]
+		}
+		info := GeoInfo{City: r[1], Department: dept, PostalCode: r[2]}
+		key := normalizeKey(r[1])
+		postalByCity[key] = append(postalByCity[key], info)
+		for _, article := range []string{"el ", "la ", "los ", "las "} {
+			if rest, ok := strings.CutPrefix(key, article); ok {
+				postalByAlias[rest] = append(postalByAlias[rest], info)
+			}
+		}
+	}
+}
+
+// lookupMunicipality finds the municipality in the 4-72 table. With an empty dept it only
+// answers when the name belongs to a single department.
+func lookupMunicipality(key, dept string) (GeoInfo, bool) {
+	postalOnce.Do(loadPostalCodes)
+	candidates := postalByCity[key]
+	if len(candidates) == 0 {
+		candidates = postalByAlias[key]
+	}
+	if dept == "" {
+		if len(candidates) == 1 {
+			return candidates[0], true
+		}
+		return GeoInfo{}, false
+	}
+	deptKey := normalizeKey(dept)
+	if proper, ok := colombiaDepartments[deptKey]; ok {
+		deptKey = normalizeKey(proper) // "Valle" -> "valle del cauca"
+	}
+	for _, c := range candidates {
+		if normalizeKey(c.Department) == deptKey {
+			return c, true
+		}
+	}
+	return GeoInfo{}, false
 }

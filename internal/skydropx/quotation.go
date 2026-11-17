@@ -35,7 +35,7 @@ func (c *Client) ValidateCoverage(ctx context.Context, data domain.ShipmentData)
 
 	destPostal := strings.TrimSpace(data.PostalCode)
 	if destPostal == "" {
-		destPostal = parser.LookupPostalCode(data.City)
+		destPostal = parser.LookupPostalCode(data.City, data.Department)
 	}
 	if destPostal == "" {
 		// Without a postal code it can't quote: validation is skipped instead of blocking the order.
