@@ -33,6 +33,7 @@ type Options struct {
 	CheckEvery     time.Duration    // cada cuánto revisar si hay guías nuevas
 	Settings       *settings.Store  // comisión del vendedor (se cambia con /comision)
 	Customers      *customers.Store // base de clientes en MongoDB (nil si MONGODB_URI no está configurada)
+	CustomersError string           // why MongoDB didn't connect at startup ("" if it did or isn't configured)
 }
 
 type Bot struct {
@@ -56,6 +57,7 @@ func New(opts Options, sky *skydropx.Client) (*Bot, error) {
 // Run atiende mensajes y revisa guías hasta que ctx termine.
 func (b *Bot) Run(ctx context.Context) {
 	b.configurarComandos(ctx)
+	b.customersAtStartup(ctx)
 	go b.watchGuias(ctx)
 	go b.watchResumenes(ctx)
 
@@ -327,7 +329,7 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 		formatCOP(data.ValorUnitario), b.guiaDestino(),
 	)
 	if !res.IsMock {
-		b.recordCustomer(ctx, data, senderOrChat(sender, chatID))
+		b.recordCustomer(ctx, data, res.ID, senderOrChat(sender, chatID))
 	}
 	msg += advertenciaVendedor(hist)
 	if res.IsMock {

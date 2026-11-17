@@ -37,10 +37,12 @@ func main() {
 
 	// La base de clientes es opcional: si MongoDB no responde, el bot sigue funcionando sin ella.
 	var clientes *customers.Store
+	var clientesError string
 	if cfg.MongoURI != "" {
 		store, closeMongo, err := customers.OpenMongo(context.Background(), cfg.MongoURI, cfg.MongoDatabase)
 		if err != nil {
 			log.Printf("Base de clientes desactivada: %v", err)
+			clientesError = err.Error()
 		} else {
 			clientes = store
 			defer func() { _ = closeMongo(context.Background()) }()
@@ -62,6 +64,7 @@ func main() {
 			CheckEvery:     time.Duration(cfg.GuiaCheckMinutes) * time.Minute,
 			Settings:       ajustes,
 			Customers:      clientes,
+			CustomersError: clientesError,
 		}, client)
 		if err != nil {
 			log.Fatalf("Bot de Telegram: %v", err)

@@ -22,6 +22,8 @@ const (
 	actConfirmar = "c"
 	actCancelar  = "x"
 	actForzar    = "f" // generar la guía aunque el cliente tenga historial
+
+	actGuardarCliente = "rc" // retry saving a customer in the customer list
 )
 
 func botonGenerar(orderID string) [][]telegram.Button {
@@ -59,6 +61,10 @@ func (b *Bot) handleCallback(ctx context.Context, cq *telegram.CallbackQuery) {
 		return
 	}
 	action, orderID, _ := strings.Cut(cq.Data, ":")
+	if action == actGuardarCliente {
+		b.retryCustomer(ctx, cq.ID, chatID, msgID, orderID)
+		return
+	}
 	p, ok := b.st.getPending(orderID)
 	if !ok {
 		_ = b.tg.AnswerCallback(ctx, cq.ID, "Esta orden ya tiene guía o no está pendiente.")

@@ -18,8 +18,8 @@ func TestCustomerListFromOrders(t *testing.T) {
 
 	data := domain.ShipmentData{Nombre: "Ana Pérez", Documento: "1.111.111", Telefono: "300 111 2233", Ciudad: "Montería",
 		Departamento: "Córdoba", Cantidad: 2, ValorUnitario: 60000, AutorizaDatos: "si", Fuente: "facebook"}
-	b.recordCustomer(ctx, data, "Vendedor")
-	b.recordCustomer(ctx, domain.ShipmentData{Nombre: "Luis", Telefono: "3105556677", Ciudad: "Sincelejo"}, "Vendedor")
+	b.recordCustomer(ctx, data, "orden-1", "Vendedor")
+	b.recordCustomer(ctx, domain.ShipmentData{Nombre: "Luis", Telefono: "3105556677", Ciudad: "Sincelejo"}, "orden-2", "Vendedor")
 
 	ana, err := store.Find(ctx, "1111111")
 	if err != nil || !ana.Contactable() || ana.Consent.RecordedBy != "Vendedor" || len(ana.Orders) != 1 ||
@@ -71,5 +71,91 @@ func TestMigrationText(t *testing.T) {
 	}
 	if strings.Contains(msg, "Ya estaban migrados") || strings.Contains(msg, "más antiguos") {
 		t.Errorf("no debe mostrar líneas en cero:\n%s", msg)
+	}
+}
+
+func TestUnsavedCustomerIsReportedAndRetried(t *testing.T) {
+	b, f := newTestBot(t)
+	ctx := context.Background()
+	b.opts.GestionChatIDs = []int64{-100}
+	// MONGODB_URI was set but MongoDB didn't connect at startup.
+	b.opts.CustomersError = "server selection error: mongodb+srv://user:secret@cluster0.x.mongodb.net tls: internal error"
+
+	b.customersAtStartup(ctx)
+	if last := f.messages[len(f.messages)-1]; !strings.Contains(last, "La base de clientes no se conectó") ||
+		!strings.Contains(last, "Qué hacer") || strings.Contains(last, "secret") {
+		t.Fatalf("startup notice (without the password): %s", last)
+	}
+
+	data := domain.ShipmentData{Nombre: "Ana Pérez", Telefono: "3001112233", Ciudad: "Montería", Cantidad: 1, AutorizaDatos: "si"}
+	b.recordCustomer(ctx, data, "orden-1", "Vendedor")
+	notice := f.messages[len(f.messages)-1]
+	for _, want := range []string{"No se guardó el cliente", "Ana Pérez", "no se conectó cuando arrancó", "Reintentar", "no se pierde"} {
+		if !strings.Contains(notice, want) {
+			t.Errorf("falta %q en:\n%s", want, notice)
+		}
+	}
+	if strings.Contains(notice, "secret") {
+		t.Fatal("the notice must never show the connection string")
+	}
+	if u, ok := b.st.getUnsaved("orden-1"); !ok || u.Sender != "Vendedor" {
+		t.Fatal("the customer must be kept aside")
+	}
+
+	// Still not connected: the retry says so and keeps the button.
+	b.retryCustomer(ctx, "cb", -100, 1, "orden-1")
+	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "Último intento") {
+		t.Fatalf("failed retry: %s", last)
+	}
+
+	// MongoDB connects: the retry saves it with the original order date and consent.
+	store := customers.NewMemoryStore()
+	b.opts.Customers, b.opts.CustomersError = store, ""
+	b.retryCustomer(ctx, "cb", -100, 1, "orden-1")
+	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "quedó guardado") {
+		t.Fatalf("successful retry: %s", last)
+	}
+	ana, err := store.Find(ctx, "3001112233")
+	if err != nil || !ana.Contactable() || len(ana.Orders) != 1 {
+		t.Fatalf("saved customer: %+v %v", ana, err)
+	}
+	if _, ok := b.st.getUnsaved("orden-1"); ok {
+		t.Fatal("a saved customer must leave the queue")
+	}
+	b.retryCustomer(ctx, "cb", -100, 1, "orden-1")
+	if last := f.edits[len(f.edits)-1]; !strings.Contains(last, "Cliente guardado") {
+		t.Fatalf("second tap: %s", last)
+	}
+}
+
+func TestUnsavedCustomersAreSavedAtStartup(t *testing.T) {
+	b, f := newTestBot(t)
+	ctx := context.Background()
+	b.opts.GestionChatIDs = []int64{-100}
+	for _, id := range []string{"o1", "o2"} {
+		_ = b.st.addUnsaved(UnsavedCustomer{OrderID: id, Data: domain.ShipmentData{Nombre: id, Telefono: "300000000" + id[1:]}, At: time.Now()})
+	}
+	b.opts.Customers = customers.NewMemoryStore()
+	b.customersAtStartup(ctx)
+	if last := f.messages[len(f.messages)-1]; !strings.Contains(last, "<b>2</b> clientes que habían quedado apartados") {
+		t.Fatalf("startup flush: %s", last)
+	}
+	if len(b.st.snapshotUnsaved()) != 0 {
+		t.Fatal("the queue must be empty")
+	}
+	n := len(f.messages)
+	b.customersAtStartup(ctx)
+	if len(f.messages) != n {
+		t.Fatal("nothing to report when nothing was pending")
+	}
+}
+
+func TestCustomerListNotConfiguredIsSilent(t *testing.T) {
+	b, f := newTestBot(t)
+	b.opts.GestionChatIDs = []int64{-100}
+	b.customersAtStartup(context.Background())
+	b.recordCustomer(context.Background(), domain.ShipmentData{Nombre: "Ana", Telefono: "3001112233"}, "o1", "V")
+	if len(f.messages) != 0 || len(b.st.snapshotUnsaved()) != 0 {
+		t.Fatalf("without MONGODB_URI nothing is said nor kept: %v", f.messages)
 	}
 }

@@ -51,6 +51,9 @@ type State struct {
 	// Avisos de problemas de entrega ya enviados (envío:estado:día -> día), para no repetirlos.
 	Avisos map[string]string `json:"avisos,omitempty"`
 
+	// Customers that couldn't be saved in the customer list, kept until a retry works.
+	UnsavedCustomers []UnsavedCustomer `json:"unsaved_customers,omitempty"`
+
 	// Último día (AAAA-MM-DD) en que se mandó cada resumen automático.
 	UltimoResumenDiario  string `json:"ultimo_resumen_diario,omitempty"`
 	UltimoResumenSemanal string `json:"ultimo_resumen_semanal,omitempty"`

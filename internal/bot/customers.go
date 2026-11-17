@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -14,35 +15,217 @@ import (
 	"skydropx-automator/internal/customers"
 	"skydropx-automator/internal/domain"
 	"skydropx-automator/internal/skydropx"
+	"skydropx-automator/internal/telegram"
 )
 
 // migrateMaxPages caps how many pages of shipments (20 each) "/clientes migrar" reads from Skydropx.
 const migrateMaxPages = 250
 
-// recordCustomer saves the customer of a new order in the customer list (if it's configured).
-// A failure is logged but never blocks the order.
-func (b *Bot) recordCustomer(ctx context.Context, data domain.ShipmentData, sender string) {
+// UnsavedCustomer is the customer of an order that couldn't be saved in the customer list.
+type UnsavedCustomer struct {
+	OrderID string              `json:"order_id"`
+	Data    domain.ShipmentData `json:"data"`
+	Sender  string              `json:"sender"`
+	At      time.Time           `json:"at"` // when the order was created: the date the order keeps
+}
+
+func (s *State) addUnsaved(u UnsavedCustomer) error {
+	s.mu.Lock()
+	s.UnsavedCustomers = append(s.UnsavedCustomers, u)
+	s.mu.Unlock()
+	return s.save()
+}
+
+func (s *State) getUnsaved(orderID string) (UnsavedCustomer, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, u := range s.UnsavedCustomers {
+		if u.OrderID == orderID {
+			return u, true
+		}
+	}
+	return UnsavedCustomer{}, false
+}
+
+func (s *State) removeUnsaved(orderID string) error {
+	s.mu.Lock()
+	kept := s.UnsavedCustomers[:0]
+	for _, u := range s.UnsavedCustomers {
+		if u.OrderID != orderID {
+			kept = append(kept, u)
+		}
+	}
+	s.UnsavedCustomers = kept
+	s.mu.Unlock()
+	return s.save()
+}
+
+func (s *State) snapshotUnsaved() []UnsavedCustomer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]UnsavedCustomer(nil), s.UnsavedCustomers...)
+}
+
+// errNotConnected means MONGODB_URI is set but MongoDB didn't connect when the bot started.
+var errNotConnected = errors.New("la base de clientes no se conectó al arrancar el bot")
+
+// saveCustomer writes the customer of an order in the customer list.
+func (b *Bot) saveCustomer(ctx context.Context, u UnsavedCustomer) error {
 	if b.opts.Customers == nil {
-		return
+		return errNotConnected
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	now := time.Now()
+	data := u.Data
 	in := customers.Customer{
 		Name: data.Nombre, DocumentID: data.Documento, Phone: data.Telefono, Email: data.Correo,
 		Department: data.Departamento, City: data.Ciudad, Neighborhood: data.Barrio, Address: data.Direccion,
 		Source: data.Fuente,
 	}
 	if data.AutorizaDatos == "si" {
-		in.Consent = customers.Consent{Given: true, Date: now, Evidence: `Pedido por Telegram con "Autoriza datos: SÍ"`, RecordedBy: sender}
+		in.Consent = customers.Consent{Given: true, Date: u.At, Evidence: `Pedido por Telegram con "Autoriza datos: SÍ"`, RecordedBy: u.Sender}
 	}
 	units := data.Cantidad
 	if units < 1 {
 		units = 1
 	}
-	o := customers.Order{Date: now, Units: units, UnitPrice: data.ValorUnitario, CreatedBy: sender}
-	if _, err := b.opts.Customers.RecordOrder(ctx, in, o); err != nil {
-		log.Printf("bot: couldn't save customer %q: %v", data.Nombre, err)
+	o := customers.Order{Date: u.At, Units: units, UnitPrice: data.ValorUnitario, CreatedBy: u.Sender}
+	_, err := b.opts.Customers.RecordOrder(ctx, in, o)
+	return err
+}
+
+// recordCustomer saves the customer of a new order. Success is silent; on failure the customer is kept
+// on disk and the gestión group is told what happened, with a button to retry. The order never waits on it.
+func (b *Bot) recordCustomer(ctx context.Context, data domain.ShipmentData, orderID, sender string) {
+	if b.opts.Customers == nil && b.opts.CustomersError == "" {
+		return // the customer list isn't configured
+	}
+	u := UnsavedCustomer{OrderID: orderID, Data: data, Sender: sender, At: time.Now()}
+	err := b.saveCustomer(ctx, u)
+	if err == nil {
+		return
+	}
+	log.Printf("bot: couldn't save customer %q: %v", data.Nombre, err)
+	if err := b.st.addUnsaved(u); err != nil {
+		log.Printf("bot: couldn't keep the unsaved customer %q: %v", data.Nombre, err)
+	}
+	for _, id := range b.gestionChats() {
+		if _, err := b.tg.SendMessageWithButtons(ctx, id, unsavedText(u, b.failureReason(err)), retryCustomerButton(orderID)); err != nil {
+			log.Printf("bot: couldn't send the unsaved customer notice: %v", err)
+		}
+	}
+}
+
+func retryCustomerButton(orderID string) [][]telegram.Button {
+	return [][]telegram.Button{telegram.Row(telegram.Button{Text: "🔄 Reintentar", Data: actGuardarCliente + ":" + orderID})}
+}
+
+// failureReason explains a failure in plain words, without connection strings.
+func (b *Bot) failureReason(err error) string {
+	if errors.Is(err, errNotConnected) {
+		return "la base de clientes no se conectó cuando arrancó el bot (" + sanitizeReason(b.opts.CustomersError) + ")"
+	}
+	msg := err.Error()
+	switch {
+	case errors.Is(err, context.DeadlineExceeded), strings.Contains(msg, "server selection"):
+		return "MongoDB no respondió a tiempo"
+	default:
+		return sanitizeReason(msg)
+	}
+}
+
+var mongoURIPattern = regexp.MustCompile(`mongodb(\+srv)?://\S+`)
+
+// sanitizeReason hides any connection string and keeps the reason short.
+func sanitizeReason(s string) string {
+	s = mongoURIPattern.ReplaceAllString(s, "<uri>")
+	if r := []rune(s); len(r) > 200 {
+		s = string(r[:200]) + "…"
+	}
+	return s
+}
+
+// unsavedText is the notice of a customer that couldn't be saved.
+func unsavedText(u UnsavedCustomer, reason string) string {
+	return fmt.Sprintf(`⚠️ <b>No se guardó el cliente en la base</b>
+👤 %s · 📞 %s
+❓ Motivo: %s
+
+El pedido sigue normal; solo falta guardar al cliente. El bot lo tiene apartado, no se pierde.
+
+<b>Qué hacer</b>
+1. Toca <b>🔄 Reintentar</b> en unos minutos.
+2. Si sigue fallando: en Atlas revisa que el cluster esté activo y que Network Access tenga <code>0.0.0.0/0</code>; luego reinicia el servicio en Render (Manual Deploy). Al arrancar conectado, el bot guarda solo los clientes apartados.`,
+		html.EscapeString(u.Data.Nombre), html.EscapeString(u.Data.Telefono), html.EscapeString(reason))
+}
+
+// retryCustomer handles the 🔄 Reintentar button of an unsaved customer.
+func (b *Bot) retryCustomer(ctx context.Context, callbackID string, chatID, msgID int64, orderID string) {
+	u, ok := b.st.getUnsaved(orderID)
+	if !ok {
+		_ = b.tg.AnswerCallback(ctx, callbackID, "Este cliente ya está guardado.")
+		_ = b.tg.EditMessage(ctx, chatID, msgID, "✅ Cliente guardado en la base.", nil)
+		return
+	}
+	if err := b.saveCustomer(ctx, u); err != nil {
+		reason := b.failureReason(err)
+		log.Printf("bot: retry couldn't save customer %q: %v", u.Data.Nombre, err)
+		_ = b.tg.AnswerCallback(ctx, callbackID, "Sigue fallando.")
+		_ = b.tg.EditMessage(ctx, chatID, msgID, unsavedText(u, reason)+"\n\n<i>Último intento: "+fechaHora(time.Now())+"</i>", retryCustomerButton(orderID))
+		return
+	}
+	if err := b.st.removeUnsaved(orderID); err != nil {
+		log.Printf("bot: couldn't forget the saved customer %q: %v", u.Data.Nombre, err)
+	}
+	_ = b.tg.AnswerCallback(ctx, callbackID, "Guardado.")
+	_ = b.tg.EditMessage(ctx, chatID, msgID, "✅ <b>"+html.EscapeString(u.Data.Nombre)+"</b> quedó guardado en la base.", nil)
+}
+
+// customersAtStartup warns the gestión group if MongoDB didn't connect, and otherwise saves the customers
+// left aside while it was failing.
+func (b *Bot) customersAtStartup(ctx context.Context) {
+	if b.opts.Customers == nil {
+		if b.opts.CustomersError != "" {
+			b.sayGestion(ctx, "⚠️ <b>La base de clientes no se conectó</b>\n❓ Motivo: "+html.EscapeString(sanitizeReason(b.opts.CustomersError))+
+				"\n\nLos pedidos funcionan normal, pero sus clientes quedan apartados hasta que la base conecte.\n\n<b>Qué hacer</b>\nEn Atlas revisa que el cluster esté activo y que Network Access tenga <code>0.0.0.0/0</code>; en Render revisa que <code>MONGODB_URI</code> esté bien copiada y reinicia el servicio (Manual Deploy).")
+		}
+		return
+	}
+	pending := b.st.snapshotUnsaved()
+	if len(pending) == 0 {
+		return
+	}
+	saved, failed := 0, 0
+	for _, u := range pending {
+		if err := b.saveCustomer(ctx, u); err != nil {
+			log.Printf("bot: startup couldn't save customer %q: %v", u.Data.Nombre, err)
+			failed++
+			continue
+		}
+		if err := b.st.removeUnsaved(u.OrderID); err != nil {
+			log.Printf("bot: couldn't forget the saved customer %q: %v", u.Data.Nombre, err)
+		}
+		saved++
+	}
+	msg := fmt.Sprintf("✅ Se guardaron en la base <b>%d</b> clientes que habían quedado apartados.", saved)
+	if failed > 0 {
+		msg += fmt.Sprintf("\n⚠️ %d siguen sin guardarse: usa el botón 🔄 Reintentar de su aviso.", failed)
+	}
+	b.sayGestion(ctx, msg)
+}
+
+// notConnectedText explains why the customer commands don't work.
+func (b *Bot) notConnectedText() string {
+	if b.opts.CustomersError != "" {
+		return "⚠️ La base de clientes no se conectó al arrancar el bot.\n❓ Motivo: " + html.EscapeString(sanitizeReason(b.opts.CustomersError)) +
+			"\n\nRevisa Network Access en Atlas y reinicia el servicio en Render (Manual Deploy)."
+	}
+	return "La base de clientes no está configurada: falta <code>MONGODB_URI</code> en Render."
+}
+
+func (b *Bot) sayGestion(ctx context.Context, msg string) {
+	for _, id := range b.gestionChats() {
+		b.say(ctx, id, msg)
 	}
 }
 
@@ -54,7 +237,7 @@ const ayudaClientes = `<code>/clientes</code> → resumen de la base y el archiv
 // customersCommand handles /clientes and "/clientes migrar".
 func (b *Bot) customersCommand(ctx context.Context, chatID int64, text string) {
 	if b.opts.Customers == nil {
-		b.say(ctx, chatID, "La base de clientes no está configurada: falta <code>MONGODB_URI</code> en Render.")
+		b.say(ctx, chatID, b.notConnectedText())
 		return
 	}
 	if args := strings.Fields(strings.TrimPrefix(text, "/clientes")); len(args) > 0 && strings.EqualFold(args[0], "migrar") {
@@ -217,7 +400,7 @@ func fechaHora(t time.Time) string {
 // consentCommand handles /autoriza <document or phone> [how]: the customer authorized the use of their data.
 func (b *Bot) consentCommand(ctx context.Context, chatID int64, sender, text string) {
 	if b.opts.Customers == nil {
-		b.say(ctx, chatID, "La base de clientes no está configurada: falta <code>MONGODB_URI</code> en Render.")
+		b.say(ctx, chatID, b.notConnectedText())
 		return
 	}
 	f := strings.Fields(strings.TrimPrefix(text, "/autoriza"))
@@ -244,7 +427,7 @@ func (b *Bot) consentCommand(ctx context.Context, chatID int64, sender, text str
 // optOutCommand handles /baja <document or phone>: the customer doesn't want more messages.
 func (b *Bot) optOutCommand(ctx context.Context, chatID int64, text string) {
 	if b.opts.Customers == nil {
-		b.say(ctx, chatID, "La base de clientes no está configurada: falta <code>MONGODB_URI</code> en Render.")
+		b.say(ctx, chatID, b.notConnectedText())
 		return
 	}
 	f := strings.Fields(strings.TrimPrefix(text, "/baja"))
