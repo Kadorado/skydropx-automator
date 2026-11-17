@@ -25,9 +25,9 @@ type GeoInfo struct {
 var colombiaCities = map[string]GeoInfo{
 	"quibdo":        {City: "Quibdó", Department: "Chocó", PostalCode: "270001"},
 	"istmina":       {City: "Istmina", Department: "Chocó", PostalCode: "274010"},
-	"tad":           {City: "Tadó", Department: "Chocó", PostalCode: "273010"},
-	"tado":          {City: "Tadó", Department: "Chocó", PostalCode: "273010"},
-	"condoto":       {City: "Condoto", Department: "Chocó", PostalCode: "274030"},
+	"tad":           {City: "Tadó", Department: "Chocó", PostalCode: "271070"},
+	"tado":          {City: "Tadó", Department: "Chocó", PostalCode: "271070"},
+	"condoto":       {City: "Condoto", Department: "Chocó", PostalCode: "273030"},
 	"medellin":      {City: "Medellín", Department: "Antioquia", PostalCode: "050001"},
 	"bello":         {City: "Bello", Department: "Antioquia", PostalCode: "051050"},
 	"envigado":      {City: "Envigado", Department: "Antioquia", PostalCode: "055420"},
@@ -179,8 +179,11 @@ func LookupPostalCode(city, dept string) string {
 }
 
 func curatedPostal(key, dept string, info GeoInfo) string {
-	if m, ok := lookupMunicipality(key, dept); ok {
-		return m.PostalCode
+	// The proper name also covers aliases like "tad" -> Tadó.
+	for _, k := range []string{key, normalizeKey(info.City)} {
+		if m, ok := lookupMunicipality(k, dept); ok {
+			return m.PostalCode
+		}
 	}
 	return info.PostalCode
 }

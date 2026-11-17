@@ -20,7 +20,8 @@ func TestPostalCodeFromTable(t *testing.T) {
 		{"Banco Magdalena", "El Banco", "Magdalena", "473040"},
 		{"Banco", "El Banco", "Magdalena", "473040"},
 		{"EL BANCO", "El Banco", "Magdalena", "473040"},
-		{"Tadó", "Tadó", "Chocó", "271070"},     // the old table had 273010
+		{"Tadó", "Tadó", "Chocó", "271070"}, // the old table had 273010
+		{"Tad", "Tadó", "Chocó", "271070"},
 		{"Condoto", "Condoto", "Chocó", "273030"}, // the old table had 274030
 		{"Itagüí", "Itagüí", "Antioquia", "055410"},
 		{"Bogotá", "Bogotá D.C.", "Bogotá D.C.", "110111"},
