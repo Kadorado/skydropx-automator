@@ -16,7 +16,7 @@ type GeoInfo struct {
 	PostalCode string
 }
 
-// Mapa de municipios principales y frecuentes en Colombia (clave normalizada sin tildes en minúsculas)
+// Map of main and frequent municipalities in Colombia (normalized key, no accents, lowercase)
 var colombiaCities = map[string]GeoInfo{
 	"quibdo":        {City: "Quibdó", Department: "Chocó", PostalCode: "270001"},
 	"istmina":       {City: "Istmina", Department: "Chocó", PostalCode: "274010"},
@@ -117,20 +117,20 @@ func normalizeKey(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// ResolveCityAndDept interpreta textos como "QUIBDO CHOCO", "Medellín, Antioquia" o "Quibdó".
+// ResolveCityAndDept interprets texts like "QUIBDO CHOCO", "Medellín, Antioquia" or "Quibdó".
 func ResolveCityAndDept(raw string, titleCaser cases.Caser) (city, dept, postal string) {
 	normInput := normalizeKey(raw)
 	if normInput == "" {
 		return "", "", ""
 	}
 
-	// 1. Coincidencia exacta con ciudad conocida
+	// 1. Exact match with a known city
 	if info, ok := colombiaCities[normInput]; ok {
 		return info.City, info.Department, info.PostalCode
 	}
 
-	// 2. Separar si viene "CIUDAD DEPARTAMENTO" (ej. "quibdo choco" o "santa marta magdalena")
-	// Probamos sufijos de departamento conocidos desde los más largos a los más cortos
+	// 2. Split if it comes as "CITY DEPARTMENT" (e.g. "quibdo choco" or "santa marta magdalena")
+	// Try known department suffixes from longest to shortest
 	for deptKey, deptProper := range colombiaDepartments {
 		suffix := " " + deptKey
 		if strings.HasSuffix(normInput, suffix) {
@@ -142,11 +142,11 @@ func ResolveCityAndDept(raw string, titleCaser cases.Caser) (city, dept, postal 
 		}
 	}
 
-	// 3. Fallback: capitalizar lo que venga sin inventar departamento si no se reconoce
+	// 3. Fallback: capitalize whatever comes without inventing a department if it isn't recognized
 	return titleCaser.String(strings.ToLower(strings.TrimSpace(raw))), "", ""
 }
 
-// LookupPostalCode intenta obtener un código postal de referencia si el usuario editó la ciudad.
+// LookupPostalCode tries to get a reference postal code if the user edited the city.
 func LookupPostalCode(city string) string {
 	if info, ok := colombiaCities[normalizeKey(city)]; ok {
 		return info.PostalCode

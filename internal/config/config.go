@@ -9,20 +9,20 @@ import (
 
 type Config struct {
 	Port                 string
-	SkydropxMode         string // "mock" o "live"
-	SkydropxBaseURL      string // host sin /api/v1, p. ej. https://pro.skydropx.com
-	SkydropxClientID     string // OAuth client_id (Conexiones > API en Skydropx)
+	SkydropxMode         string // "mock" or "live"
+	SkydropxBaseURL      string // host without /api/v1, e.g. https://pro.skydropx.com
+	SkydropxClientID     string // OAuth client_id (Conexiones > API in Skydropx)
 	SkydropxClientSecret string // OAuth client_secret
 
-	// Webhook de Skydropx (Conexiones > Webhooks): clave HMAC o token Bearer, y nombre del encabezado.
+	// Skydropx webhook (Conexiones > Webhooks): HMAC key or Bearer token, and header name.
 	SkydropxWebhookSecret string
 	SkydropxWebhookHeader string
 
-	// Base de clientes en MongoDB (Atlas). Sin MONGODB_URI no se guardan clientes.
+	// Customer database in MongoDB (Atlas). Without MONGODB_URI no customers are stored.
 	MongoURI      string
 	MongoDatabase string
 
-	// Dirección de origen guardada en Skydropx (Mis direcciones): por ID o, si no, por alias.
+	// Origin address saved in Skydropx (Mis direcciones): by ID or, failing that, by alias.
 	OriginAddressTemplateID string
 	OriginAddressAlias      string
 
@@ -45,16 +45,16 @@ type Config struct {
 	DefaultWidthCm   int
 	DefaultHeightCm  int
 	DefaultContent   string
-	// Bot de Telegram (vendedor)
+	// Telegram bot (seller)
 	TelegramToken          string
 	TelegramAllowedChatIDs []int64
-	TelegramAdminChatIDs   []int64 // grupo donde se publica la guía lista
-	TelegramGestionChatIDs []int64 // tu grupo privado: órdenes nuevas con botón para generar la guía y /imprimir
+	TelegramAdminChatIDs   []int64 // group where the ready label is posted
+	TelegramOpsChatIDs     []int64 // your private group: new orders with a button to generate the label and /imprimir
 	TelegramAPIBase        string
-	DefaultValorUnitario   float64
-	ComisionPorDatafono    float64 // lo que se le paga al vendedor por cada datáfono vendido
+	DefaultUnitPrice       float64
+	CommissionPerTerminal  float64 // what the seller is paid for each terminal sold
 	BotStatePath           string
-	GuiaCheckMinutes       int
+	LabelCheckMinutes      int
 }
 
 func Load() Config {
@@ -76,7 +76,7 @@ func Load() Config {
 		OriginAddressTemplateID: getEnv("ORIGIN_ADDRESS_TEMPLATE_ID", ""),
 		OriginAddressAlias:      getEnv("ORIGIN_ADDRESS_ALIAS", "belu"),
 
-		// Origen: dirección verificada de la sucursal Belu Store en Skydropx (ID sucursal 232574).
+		// Origin: verified address of the Belu Store branch in Skydropx (branch ID 232574).
 		OriginName:           getEnv("ORIGIN_NAME", "Kevin Dorado"),
 		OriginCompany:        getEnv("ORIGIN_COMPANY", "belu store"),
 		OriginStreet:         getEnv("ORIGIN_STREET", "CL 24A N57A 84"),
@@ -92,7 +92,7 @@ func Load() Config {
 
 		PreferredCarrier: getEnv("PREFERRED_CARRIER", "Interrapidísimo"),
 		DefaultWeightKg:  getEnvFloat("DEFAULT_WEIGHT_KG", 1.0),
-		// Paquete "datafono" de Mis paquetes en Skydropx: 10 x 10 x 15 cm, 1 kg.
+		// "datafono" package from Mis paquetes in Skydropx: 10 x 10 x 15 cm, 1 kg.
 		DefaultLengthCm:        getEnvInt("DEFAULT_LENGTH_CM", 10),
 		DefaultWidthCm:         getEnvInt("DEFAULT_WIDTH_CM", 10),
 		DefaultHeightCm:        getEnvInt("DEFAULT_HEIGHT_CM", 15),
@@ -100,12 +100,12 @@ func Load() Config {
 		TelegramToken:          getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramAllowedChatIDs: getEnvInt64List("TELEGRAM_ALLOWED_CHAT_IDS", "TELEGRAM_ALLOWED_CHAT_ID"),
 		TelegramAdminChatIDs:   getEnvInt64List("TELEGRAM_ADMIN_CHAT_IDS"),
-		TelegramGestionChatIDs: getEnvInt64List("TELEGRAM_GESTION_CHAT_IDS"),
+		TelegramOpsChatIDs:     getEnvInt64List("TELEGRAM_GESTION_CHAT_IDS"),
 		TelegramAPIBase:        getEnv("TELEGRAM_API_BASE", ""),
-		DefaultValorUnitario:   getEnvFloat("DEFAULT_VALOR_UNITARIO", 60000),
-		ComisionPorDatafono:    getEnvFloat("COMISION_POR_DATAFONO", 15000),
+		DefaultUnitPrice:       getEnvFloat("DEFAULT_VALOR_UNITARIO", 60000),
+		CommissionPerTerminal:  getEnvFloat("COMISION_POR_DATAFONO", 15000),
 		BotStatePath:           getEnv("BOT_STATE_FILE", "data/bot_state.json"),
-		GuiaCheckMinutes:       getEnvInt("GUIA_CHECK_MINUTES", 5),
+		LabelCheckMinutes:      getEnvInt("GUIA_CHECK_MINUTES", 5),
 	}
 }
 
@@ -125,8 +125,8 @@ func getEnvInt64(key string, fallback int64) int64 {
 	return fallback
 }
 
-// getEnvInt64List lee IDs separados por comas (TELEGRAM_ALLOWED_CHAT_IDS=123,456).
-// También acepta la variable anterior de un solo ID como respaldo.
+// getEnvInt64List reads comma-separated IDs (TELEGRAM_ALLOWED_CHAT_IDS=123,456).
+// It also accepts the old single-ID variable as a fallback.
 func getEnvInt64List(keys ...string) []int64 {
 	var out []int64
 	for _, key := range keys {
@@ -157,7 +157,7 @@ func getEnvFloat(key string, fallback float64) float64 {
 	return fallback
 }
 
-// loadDotEnv carga un archivo .env sencillo sin dependencias externas.
+// loadDotEnv loads a simple .env file without external dependencies.
 func loadDotEnv(filename string) {
 	f, err := os.Open(filename)
 	if err != nil {

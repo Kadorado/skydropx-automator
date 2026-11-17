@@ -2,22 +2,22 @@ package parser
 
 import "testing"
 
-func TestValorUnitarioFormatos(t *testing.T) {
-	casos := map[string]float64{
+func TestUnitPriceFormats(t *testing.T) {
+	cases := map[string]float64{
 		"Valor: 60000":           60000,
 		"Valor unitario: 60.000": 60000,
 		"Precio: $60,000":        60000,
 		"Cantidad: 2":            0,
 	}
-	for linea, esperado := range casos {
-		got := ParseWhatsAppMessage("Nombre: Ana\n" + linea).Data.ValorUnitario
-		if got != esperado {
-			t.Errorf("%q: got %v, want %v", linea, got, esperado)
+	for lineText, wantText := range cases {
+		got := ParseWhatsAppMessage("Nombre: Ana\n" + lineText).Data.UnitPrice
+		if got != wantText {
+			t.Errorf("%q: got %v, want %v", lineText, got, wantText)
 		}
 	}
 }
 
-func TestMensajeConFormatoDeWhatsApp(t *testing.T) {
+func TestMessageWithWhatsAppFormatting(t *testing.T) {
 	raw := "¡Gracias Yeison! Ya quedó todo anotado 🫡\n" +
 		"*DATOS DE ENVÍO – SERVICIO TÉCNICO ISTMINA* 📦\n" +
 		"*Receptor:* YEISON ROA\n" +
@@ -31,13 +31,13 @@ func TestMensajeConFormatoDeWhatsApp(t *testing.T) {
 		"━━━━━━━━━━━━━━\n" +
 		"*Valor: 25.000*\n"
 	d := ParseWhatsAppMessage(raw).Data
-	if d.Nombre == "" || d.Documento != "1077458155" || d.Telefono != "3145615105" {
+	if d.Name == "" || d.Document != "1077458155" || d.Phone != "3145615105" {
 		t.Fatalf("no leyó nombre/documento/teléfono: %+v", d)
 	}
-	if d.Ciudad == "" || d.Direccion != "Carrera 7 con 30" || d.Cantidad != 2 {
+	if d.City == "" || d.Address != "Carrera 7 con 30" || d.Quantity != 2 {
 		t.Fatalf("no leyó ciudad/dirección/cantidad: %+v", d)
 	}
-	if d.ValorUnitario != 25000 {
-		t.Fatalf("no leyó el valor: %v", d.ValorUnitario)
+	if d.UnitPrice != 25000 {
+		t.Fatalf("no leyó el valor: %v", d.UnitPrice)
 	}
 }

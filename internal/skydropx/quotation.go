@@ -14,7 +14,7 @@ import (
 	"skydropx-automator/internal/parser"
 )
 
-// CoverageResult es el resultado de validar una dirección cotizando la ruta en Skydropx.
+// CoverageResult is the result of validating an address by quoting the route in Skydropx.
 type CoverageResult struct {
 	OK       bool     `json:"ok"`
 	Carriers []string `json:"carriers"`
@@ -23,26 +23,26 @@ type CoverageResult struct {
 
 const (
 	quotePollAttempts = 10
-	quotePollInterval = 1 * time.Second // el límite de la API es de 2 solicitudes por segundo
+	quotePollInterval = 1 * time.Second // the API limit is 2 requests per second
 )
 
-// ValidateCoverage cotiza la ruta origen -> destino (POST /api/v1/quotations) y revisa las tarifas.
-// Si ninguna transportadora cubre la dirección, OK es false y Message explica por qué.
+// ValidateCoverage quotes the origin -> destination route (POST /api/v1/quotations) and checks the rates.
+// If no carrier covers the address, OK is false and Message explains why.
 func (c *Client) ValidateCoverage(ctx context.Context, data domain.ShipmentData) (CoverageResult, error) {
 	if c.isMock() {
 		return CoverageResult{OK: true, Message: "Modo simulación: validación de cobertura omitida."}, nil
 	}
 
-	destPostal := strings.TrimSpace(data.CodigoPostal)
+	destPostal := strings.TrimSpace(data.PostalCode)
 	if destPostal == "" {
-		destPostal = parser.LookupPostalCode(data.Ciudad)
+		destPostal = parser.LookupPostalCode(data.City)
 	}
 	if destPostal == "" {
-		// Sin código postal no se puede cotizar: se omite la validación en vez de bloquear la orden.
+		// Without a postal code it can't quote: validation is skipped instead of blocking the order.
 		return CoverageResult{OK: true, Message: "Sin código postal de destino: validación de cobertura omitida."}, nil
 	}
 
-	qty := maxInt(1, data.Cantidad)
+	qty := maxInt(1, data.Quantity)
 	body := map[string]any{
 		"quotation": map[string]any{
 			"address_from": map[string]any{
@@ -55,9 +55,9 @@ func (c *Client) ValidateCoverage(ctx context.Context, data domain.ShipmentData)
 			"address_to": map[string]any{
 				"country_code": "CO",
 				"postal_code":  destPostal,
-				"area_level1":  data.Departamento,
-				"area_level2":  data.Ciudad,
-				"street1":      data.Direccion,
+				"area_level1":  data.Department,
+				"area_level2":  data.City,
+				"street1":      data.Address,
 			},
 			"parcels": []map[string]any{
 				{
@@ -65,7 +65,7 @@ func (c *Client) ValidateCoverage(ctx context.Context, data domain.ShipmentData)
 					"width":           c.cfg.DefaultWidthCm,
 					"height":          c.cfg.DefaultHeightCm,
 					"weight":          c.cfg.DefaultWeightKg * float64(qty),
-					"declared_amount": data.ValorUnitario * float64(qty),
+					"declared_amount": data.UnitPrice * float64(qty),
 				},
 			},
 			"cash_on_delivery":        true,
@@ -83,8 +83,8 @@ func (c *Client) ValidateCoverage(ctx context.Context, data domain.ShipmentData)
 	return evaluateRates(rates), nil
 }
 
-// runQuotation crea la cotización (POST /api/v1/quotations) y espera a que termine de cargar las tarifas.
-// Si Skydropx rechaza la cotización, failMsg trae el motivo legible y err es nil.
+// runQuotation creates the quotation (POST /api/v1/quotations) and waits until the rates finish loading.
+// If Skydropx rejects the quotation, failMsg has the readable reason and err is nil.
 func (c *Client) runQuotation(ctx context.Context, body map[string]any) (id string, rates []json.RawMessage, failMsg string, err error) {
 	token, err := c.getAccessToken(ctx)
 	if err != nil {
@@ -114,7 +114,7 @@ func (c *Client) runQuotation(ctx context.Context, body map[string]any) (id stri
 		return "", nil, "", fmt.Errorf("respuesta inesperada de Skydropx al cotizar")
 	}
 
-	// Espera a que la cotización termine de cargar las tarifas (is_completed).
+	// Wait until the quotation finishes loading the rates (is_completed).
 	for i := 0; i < quotePollAttempts; i++ {
 		select {
 		case <-ctx.Done():
@@ -142,7 +142,7 @@ func (c *Client) runQuotation(ctx context.Context, body map[string]any) (id stri
 	return "", nil, "Skydropx tardó demasiado en cotizar. Intenta de nuevo.", nil
 }
 
-// evaluateRates decide si hay al menos una tarifa válida y arma el mensaje.
+// evaluateRates decides whether there is at least one valid rate and builds the message.
 func evaluateRates(raw []json.RawMessage) CoverageResult {
 	var carriers []string
 	var firstErr string
@@ -177,7 +177,7 @@ func evaluateRates(raw []json.RawMessage) CoverageResult {
 	return CoverageResult{OK: false, Message: firstErr}
 }
 
-// errorText extrae el mensaje legible de error_messages (acepta texto u objeto con display_message).
+// errorText extracts the readable message from error_messages (accepts text or an object with display_message).
 func errorText(msgs []json.RawMessage) string {
 	for _, m := range msgs {
 		var s string
@@ -200,7 +200,7 @@ func errorText(msgs []json.RawMessage) string {
 	return ""
 }
 
-// formatErrors convierte {"campo": ["mensaje"]} en "campo: mensaje".
+// formatErrors turns {"field": ["message"]} into "field: message".
 func formatErrors(v any) string {
 	m, ok := v.(map[string]any)
 	if !ok {

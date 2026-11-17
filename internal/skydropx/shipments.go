@@ -11,16 +11,16 @@ import (
 	"time"
 )
 
-// ErrMockMode se devuelve cuando la app no está en live: no hay envíos reales que consultar.
+// ErrMockMode is returned when the app isn't live: there are no real shipments to look up.
 var ErrMockMode = fmt.Errorf("modo mock: no hay envíos reales de Skydropx")
 
 const (
-	shipmentListTTL     = 30 * time.Second       // cuánto se reutiliza la lista de envíos ya descargada
-	shipmentPagePause   = 600 * time.Millisecond // el límite de la API es de 2 solicitudes por segundo
-	maxRateLimitRetries = 3                      // reintentos cuando Skydropx responde 429
+	shipmentListTTL     = 30 * time.Second       // how long the already downloaded shipment list is reused
+	shipmentPagePause   = 600 * time.Millisecond // the API limit is 2 requests per second
+	maxRateLimitRetries = 3                      // retries when Skydropx answers 429
 )
 
-// get hace un GET autenticado y, si Skydropx responde 429 (límite de solicitudes), espera y reintenta.
+// get does an authenticated GET and, if Skydropx answers 429 (rate limit), waits and retries.
 func (c *Client) get(ctx context.Context, u string) ([]byte, int, error) {
 	for attempt := 0; ; attempt++ {
 		body, status, err := c.getOnce(ctx, u)
@@ -35,7 +35,7 @@ func (c *Client) get(ctx context.Context, u string) ([]byte, int, error) {
 	}
 }
 
-// getOnce hace un GET autenticado con bearer token y devuelve el cuerpo y el status.
+// getOnce does a GET authenticated with the bearer token and returns the body and status.
 func (c *Client) getOnce(ctx context.Context, u string) ([]byte, int, error) {
 	token, err := c.getAccessToken(ctx)
 	if err != nil {
@@ -55,19 +55,19 @@ func (c *Client) getOnce(ctx context.Context, u string) ([]byte, int, error) {
 	return body, resp.StatusCode, nil
 }
 
-// maxShipmentPages limita cuántas páginas se traen (20 envíos por página).
+// maxShipmentPages limits how many pages are fetched (20 shipments per page).
 const maxShipmentPages = 15
 
-// ShipmentList une todas las páginas de GET /api/v1/shipments.
+// ShipmentList merges all pages of GET /api/v1/shipments.
 type ShipmentList struct {
 	Data      []json.RawMessage `json:"data"`
 	Included  []json.RawMessage `json:"included"`
 	Truncated bool              `json:"truncated"`
 }
 
-// ListShipments trae las páginas de GET /api/v1/shipments y las une en una sola lista.
-// Si se pide varias veces seguidas (panel, rastreo, finanzas, bot), reutiliza la misma descarga
-// durante shipmentListTTL; las llamadas simultáneas esperan a la primera en vez de repetirla.
+// ListShipments fetches the pages of GET /api/v1/shipments and merges them into a single list.
+// If requested several times in a row (dashboard, tracking, finance, bot), it reuses the same download
+// for shipmentListTTL; concurrent calls wait for the first one instead of repeating it.
 func (c *Client) ListShipments(ctx context.Context) (ShipmentList, error) {
 	if c.isMock() {
 		return ShipmentList{}, ErrMockMode
@@ -85,14 +85,14 @@ func (c *Client) ListShipments(ctx context.Context) (ShipmentList, error) {
 	return out, nil
 }
 
-// forgetShipmentList descarta la lista guardada para que la próxima consulta la traiga de nuevo.
+// forgetShipmentList drops the saved list so the next lookup fetches it again.
 func (c *Client) forgetShipmentList() {
 	c.listMu.Lock()
 	c.listCachedAt = time.Time{}
 	c.listMu.Unlock()
 }
 
-// fetchShipments descarga hasta maxPages páginas, con una pausa entre ellas para respetar el límite de la API.
+// fetchShipments downloads up to maxPages pages, pausing between them to respect the API limit.
 func (c *Client) fetchShipments(ctx context.Context, maxPages int) (ShipmentList, error) {
 	var out ShipmentList
 	seenIncluded := map[string]bool{}
@@ -146,7 +146,7 @@ func (c *Client) fetchShipments(ctx context.Context, maxPages int) (ShipmentList
 	return out, nil
 }
 
-// GetShipment devuelve la respuesta completa de GET /api/v1/shipments/{id} (data + included), sin transformar.
+// GetShipment returns the full response of GET /api/v1/shipments/{id} (data + included), untransformed.
 func (c *Client) GetShipment(ctx context.Context, id string) (json.RawMessage, error) {
 	if c.isMock() {
 		return nil, ErrMockMode
@@ -164,7 +164,7 @@ func (c *Client) GetShipment(ctx context.Context, id string) (json.RawMessage, e
 	return body, nil
 }
 
-// DownloadLabel descarga un PDF. Usa el token solo si la URL es del mismo host que la API.
+// DownloadLabel downloads a PDF. It only uses the token if the URL is on the same host as the API.
 func (c *Client) DownloadLabel(ctx context.Context, labelURL string) ([]byte, string, error) {
 	if c.isMock() {
 		return nil, "", ErrMockMode
@@ -201,7 +201,7 @@ func sameHost(a, b string) bool {
 	return err1 == nil && err2 == nil && ua.Host == ub.Host
 }
 
-// Track consulta el rastreo de una guía (GET /api/v1/shipments/tracking) y devuelve la respuesta tal cual.
+// Track looks up a label's tracking (GET /api/v1/shipments/tracking) and returns the response as is.
 func (c *Client) Track(ctx context.Context, trackingNumber, carrierName string) (json.RawMessage, error) {
 	if c.isMock() {
 		return nil, ErrMockMode

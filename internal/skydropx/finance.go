@@ -11,33 +11,33 @@ import (
 	"time"
 )
 
-// Límites para no pasarse del límite de 2 solicitudes por segundo en una sola carga del panel.
+// Limits to stay under the 2 requests per second limit in a single dashboard load.
 const (
-	maxFinancePages         = 10 // páginas de movimientos y de cargos extra (20 por página)
-	maxFinanceQuantityFetch = 40 // órdenes nuevas a consultar por carga; el resto queda en caché para la próxima
+	maxFinancePages         = 10 // pages of movements and extra charges (20 per page)
+	maxFinanceQuantityFetch = 40 // new orders to look up per load; the rest stays cached for the next one
 )
 
-// Period es un rango de días en hora de Colombia, ambos incluidos. Desde vacío = desde el principio.
+// Period is a range of days in Colombia time, both inclusive. Empty from = from the beginning.
 type Period struct {
-	From time.Time // inicio del día "desde" (cero = sin límite)
-	To   time.Time // fin del día "hasta"
+	From time.Time // start of the "desde" day (zero = no limit)
+	To   time.Time // end of the "hasta" day
 }
 
-// NewPeriod arma el rango desde fechas "2006-01-02". desde vacío no pone límite inicial; hasta vacío es hoy.
-func NewPeriod(desde, hasta string) (Period, error) {
+// NewPeriod builds the range from "2006-01-02" dates. Empty desde sets no start limit; empty hasta is today.
+func NewPeriod(from, until string) (Period, error) {
 	var p Period
-	if strings.TrimSpace(desde) != "" {
-		d, err := time.ParseInLocation("2006-01-02", desde, colombia)
+	if strings.TrimSpace(from) != "" {
+		d, err := time.ParseInLocation("2006-01-02", from, colombia)
 		if err != nil {
-			return p, fmt.Errorf("fecha desde inválida: %s", desde)
+			return p, fmt.Errorf("fecha desde inválida: %s", from)
 		}
 		p.From = d
 	}
 	end := time.Now().In(colombia)
-	if strings.TrimSpace(hasta) != "" {
-		h, err := time.ParseInLocation("2006-01-02", hasta, colombia)
+	if strings.TrimSpace(until) != "" {
+		h, err := time.ParseInLocation("2006-01-02", until, colombia)
 		if err != nil {
-			return p, fmt.Errorf("fecha hasta inválida: %s", hasta)
+			return p, fmt.Errorf("fecha hasta inválida: %s", until)
 		}
 		end = h
 	}
@@ -53,23 +53,23 @@ func (p Period) contains(t time.Time) bool {
 	return (p.From.IsZero() || !t.Before(p.From)) && !t.After(p.To)
 }
 
-// Money es una cantidad de envíos y su suma en pesos.
+// Money is a number of shipments and their sum in pesos.
 type Money struct {
 	Count  int     `json:"count"`
 	Amount float64 `json:"amount"`
 }
 
-// Commission es lo que se le debe al vendedor por datáfono, según el estado del cobro.
+// Commission is what is owed to the seller per terminal, according to the collection state.
 type Commission struct {
 	PerUnit       float64 `json:"per_unit"`
-	PaidUnits     int     `json:"paid_units"`    // datáfonos de envíos ya cobrados: se le deben
+	PaidUnits     int     `json:"paid_units"`    // terminals of shipments already collected: owed
 	PaidAmount    float64 `json:"paid_amount"`   //
-	PendingUnits  int     `json:"pending_units"` // datáfonos de envíos por cobrar: se le deberán al cobrarse
+	PendingUnits  int     `json:"pending_units"` // terminals of shipments to collect: owed once collected
 	PendingAmount float64 `json:"pending_amount"`
-	Estimated     int     `json:"estimated"` // envíos sin cantidad conocida, contados como 1 datáfono
+	Estimated     int     `json:"estimated"` // shipments with unknown quantity, counted as 1 terminal
 }
 
-// Movement es un movimiento de la cuenta de Skydropx (recarga, cobro de guía, devolución…).
+// Movement is a Skydropx account movement (top-up, label charge, refund…).
 type Movement struct {
 	Date     string  `json:"date"`
 	Kind     string  `json:"kind"`     // deposit | withdrawal | refund
@@ -78,10 +78,10 @@ type Movement struct {
 	Tracking string  `json:"tracking"`
 	Comment  string  `json:"comment"`
 	Status   string  `json:"status"`
-	Related  string  `json:"related"` // tipo de lo que originó el movimiento (Shipment, Order…)
+	Related  string  `json:"related"` // type of what caused the movement (Shipment, Order…)
 }
 
-// ExtraCharge es un cargo extra de un envío (sobrepeso, envío no recaudado…).
+// ExtraCharge is an extra charge on a shipment (overweight, uncollected shipment…).
 type ExtraCharge struct {
 	Date     string  `json:"date"`
 	Type     string  `json:"type"`
@@ -90,62 +90,62 @@ type ExtraCharge struct {
 	Status   string  `json:"status"`
 }
 
-// ShipmentMoney es la cuenta de un envío: lo que costó la guía, lo que paga el cliente
-// y lo que volvió a los créditos con el mismo número de guía.
+// ShipmentMoney is a shipment's account: what the label cost, what the customer pays
+// and what went back to the credits with the same tracking number.
 type ShipmentMoney struct {
 	Date         string             `json:"date"`
 	Tracking     string             `json:"tracking"`
 	Carrier      string             `json:"carrier"`
 	Customer     string             `json:"customer"`
-	Status       string             `json:"status"`        // pending | collected | failed | cancelled | vacío
-	LabelCost    float64            `json:"label_cost"`    // costo de la guía según el envío (lo que se le suma al cliente)
-	Charged      float64            `json:"charged"`       // todo lo descontado de los créditos con esta guía
-	ChargedParts map[string]float64 `json:"charged_parts"` // lo descontado por concepto: guia, proteccion, servicio, otro
-	CustomerPays float64            `json:"customer_pays"` // lo que la transportadora le cobra al cliente (producto + envío)
-	Product      float64            `json:"product"`       // valor del producto según la orden (0 si no se conoce)
-	Returned     float64            `json:"returned"`      // abonos y devoluciones a los créditos con esta guía
-	ReturnedAt   string             `json:"returned_at"`   // fecha del último abono o devolución
-	Extra        float64            `json:"extra"`         // cargos extra de esta guía
-	Units        int                `json:"units"`         // datáfonos de la orden (1 si no se conoce)
-	Commission   float64            `json:"commission"`    // comisión del vendedor por este envío, con la de su día
+	Status       string             `json:"status"`        // pending | collected | failed | cancelled | empty
+	LabelCost    float64            `json:"label_cost"`    // label cost according to the shipment (what is added to the customer)
+	Charged      float64            `json:"charged"`       // everything deducted from the credits with this label
+	ChargedParts map[string]float64 `json:"charged_parts"` // what was deducted per concept: guia, proteccion, servicio, otro
+	CustomerPays float64            `json:"customer_pays"` // what the carrier charges the customer (product + shipping)
+	Product      float64            `json:"product"`       // product value according to the order (0 if unknown)
+	Returned     float64            `json:"returned"`      // credits and refunds to the credits with this label
+	ReturnedAt   string             `json:"returned_at"`   // date of the last credit or refund
+	Extra        float64            `json:"extra"`         // extra charges on this label
+	Units        int                `json:"units"`         // terminals in the order (1 if unknown)
+	Commission   float64            `json:"commission"`    // seller's commission for this shipment, at its day's rate
 }
 
-// Finance es el resumen de dinero de un periodo.
+// Finance is the money summary of a period.
 type Finance struct {
-	Balance      *float64         `json:"balance"` // nil si no se pudo consultar
+	Balance      *float64         `json:"balance"` // nil if it couldn't be looked up
 	Currency     string           `json:"currency"`
 	BalanceError string           `json:"balance_error,omitempty"`
 	Shipments    int              `json:"shipments"`
 	Cancelled    int              `json:"cancelled"`
-	Collected    Money            `json:"collected"`  // contra entrega ya recaudado por la transportadora
-	Pending      Money            `json:"pending"`    // contra entrega por recaudar
-	Failed       Money            `json:"failed"`     // contra entrega que no se pudo recaudar
-	LabelCost    Money            `json:"label_cost"` // costo de las guías creadas en el periodo
-	Spending     map[string]Money `json:"spending"`   // movimientos agrupados por categoría
+	Collected    Money            `json:"collected"`  // cash on delivery already collected by the carrier
+	Pending      Money            `json:"pending"`    // cash on delivery to collect
+	Failed       Money            `json:"failed"`     // cash on delivery that couldn't be collected
+	LabelCost    Money            `json:"label_cost"` // cost of the labels created in the period
+	Spending     map[string]Money `json:"spending"`   // movements grouped by category
 	Extra        Money            `json:"extra"`
 	Commission   Commission       `json:"commission"`
 	Movements    []Movement       `json:"movements"`
 	ExtraCharges []ExtraCharge    `json:"extra_charges"`
-	PerShipment  []ShipmentMoney  `json:"per_shipment"` // la cuenta de cada envío del periodo, del más nuevo al más antiguo
-	Returned     Money            `json:"returned"`     // lo que volvió a los créditos por los envíos del periodo
-	Truncated    bool             `json:"truncated"`    // hay más de 300 envíos: los más antiguos no entran
+	PerShipment  []ShipmentMoney  `json:"per_shipment"` // each shipment's account in the period, newest first
+	Returned     Money            `json:"returned"`     // what went back to the credits for the period's shipments
+	Truncated    bool             `json:"truncated"`    // there are more than 300 shipments: the oldest ones are left out
 	Warnings     []string         `json:"warnings"`
 }
 
-// Finance arma el resumen de dinero del periodo: saldo, contra entrega, gastos, movimientos y comisión.
-// CommissionRate da la comisión por datáfono vigente en una fecha: si cambia, cada venta usa la de su día.
+// Finance builds the period's money summary: balance, cash on delivery, expenses, movements and commission.
+// CommissionRate gives the per-terminal commission in effect on a date: if it changes, each sale uses its day's.
 type CommissionRate func(t time.Time) float64
 
-// FlatCommission es una comisión que no cambia con la fecha.
+// FlatCommission is a commission that doesn't change with the date.
 func FlatCommission(v float64) CommissionRate { return func(time.Time) float64 { return v } }
 
 func (c *Client) Finance(ctx context.Context, p Period, rate CommissionRate) (Finance, error) {
 	return c.finance(ctx, p, rate, maxFinanceQuantityFetch)
 }
 
-// FinanceCompleta es Finance consultando la cantidad de todas las órdenes del periodo, sin tope:
-// tarda más (2 consultas por segundo) pero la comisión no queda estimada. La corta el contexto.
-func (c *Client) FinanceCompleta(ctx context.Context, p Period, rate CommissionRate) (Finance, error) {
+// FullFinance is Finance looking up the quantity of every order in the period, without a cap:
+// it takes longer (2 requests per second) but the commission isn't estimated. The context cuts it off.
+func (c *Client) FullFinance(ctx context.Context, p Period, rate CommissionRate) (Finance, error) {
 	return c.finance(ctx, p, rate, math.MaxInt)
 }
 
@@ -185,8 +185,8 @@ func (c *Client) finance(ctx context.Context, p Period, rate CommissionRate, max
 		f.BalanceError = err.Error()
 	}
 
-	// Los movimientos y cargos se traen hasta hoy: una devolución puede llegar días después del envío.
-	// Los listados y el resumen de gastos muestran solo los del periodo.
+	// Movements and charges are fetched up to today: a refund may arrive days after the shipment.
+	// The lists and the expense summary only show the period's.
 	untilNow := Period{From: p.From, To: time.Now().In(colombia)}
 	if untilNow.To.Before(p.To) {
 		untilNow.To = p.To
@@ -226,8 +226,8 @@ func (c *Client) finance(ctx context.Context, p Period, rate CommissionRate, max
 	return f, nil
 }
 
-// containsDate dice si una fecha de Skydropx (con hora o solo el día) cae en el periodo.
-// Las fechas que no se entienden cuentan como dentro, para no esconder movimientos.
+// containsDate reports whether a Skydropx date (with time or day only) falls in the period.
+// Dates that can't be parsed count as inside, so no movements are hidden.
 func (p Period) containsDate(s string) bool {
 	if t, ok := parseTime(s); ok {
 		return p.contains(t.In(colombia))
@@ -238,8 +238,8 @@ func (p Period) containsDate(s string) bool {
 	return true
 }
 
-// perShipment arma la cuenta de cada envío juntando, por número de guía, los abonos y devoluciones
-// a los créditos y los cargos extra.
+// perShipment builds each shipment's account by gathering, per tracking number, the credits and refunds
+// to the credits and the extra charges.
 func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCharge) ([]ShipmentMoney, Money) {
 	type back struct {
 		amount float64
@@ -306,10 +306,10 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 	return out, total
 }
 
-// customerPays es lo que la transportadora le cobra al cliente: el producto más el envío.
-// Skydropx a veces reporta el contra entrega ya con el envío (60.000 + 12.573 = 72.573) y a veces
-// solo el producto (120.000): si se conoce el producto, se toma el mayor entre lo reportado y
-// producto + envío. Sin el producto, se confía en lo reportado.
+// customerPays is what the carrier charges the customer: the product plus shipping.
+// Skydropx sometimes reports cash on delivery already including shipping (60.000 + 12.573 = 72.573) and sometimes
+// only the product (120.000): if the product is known, the larger of the reported amount and
+// product + shipping is used. Without the product, the reported amount is trusted.
 func (s financeShipment) customerPays() float64 {
 	if s.Product > 0 && s.Product+s.Cost > s.CODAmount {
 		return s.Product + s.Cost
@@ -317,7 +317,7 @@ func (s financeShipment) customerPays() float64 {
 	return s.CODAmount
 }
 
-// withLabel deja fuera los envíos sin número de guía: intentos fallidos que nunca se generaron ni se pagaron.
+// withLabel leaves out shipments without a tracking number: failed attempts that were never generated or paid.
 func withLabel(shipments []financeShipment) []financeShipment {
 	out := shipments[:0:0]
 	for _, s := range shipments {
@@ -328,7 +328,7 @@ func withLabel(shipments []financeShipment) []financeShipment {
 	return out
 }
 
-// financeShipment es lo que el resumen necesita de cada envío.
+// financeShipment is what the summary needs from each shipment.
 type financeShipment struct {
 	ID         string
 	Date       string
@@ -337,19 +337,19 @@ type financeShipment struct {
 	Customer   string
 	Phone      string
 	City       string
-	TaxID      string // cédula del destinatario
+	TaxID      string // recipient's ID document
 	OrderID    string
 	Cancelled  bool
-	NoLabel    bool    // no tiene número de guía: falló o no se generó, no se pagó
-	OnDelivery string  // pending | collected | failed | cancelled | vacío
-	CODAmount  float64 // monto de contra entrega que reporta Skydropx: a veces trae el envío y a veces no
-	Product    float64 // valor del producto según la orden (0 si no se conoce)
-	Cost       float64 // costo de la guía
-	Units      int     // datáfonos de la orden (1 si no se conoce)
-	Commission float64 // comisión del vendedor por este envío
+	NoLabel    bool    // has no tracking number: failed or wasn't generated, wasn't paid
+	OnDelivery string  // pending | collected | failed | cancelled | empty
+	CODAmount  float64 // cash-on-delivery amount reported by Skydropx: sometimes includes shipping and sometimes not
+	Product    float64 // product value according to the order (0 if unknown)
+	Cost       float64 // label cost
+	Units      int     // terminals in the order (1 if unknown)
+	Commission float64 // seller's commission for this shipment
 }
 
-// createdAt es la fecha de creación del envío; si no se entiende, ahora.
+// createdAt is the shipment's creation date; if it can't be parsed, now.
 func (s financeShipment) createdAt() time.Time {
 	if t, ok := parseTime(s.Date); ok {
 		return t
@@ -357,7 +357,7 @@ func (s financeShipment) createdAt() time.Time {
 	return time.Now()
 }
 
-// orderUnits son los datáfonos de la orden; sin dato (known false) o sin cantidad cuenta como 1.
+// orderUnits are the order's terminals; with no data (known false) or no quantity it counts as 1.
 func orderUnits(qty map[string]int, orderID string) (units int, known bool) {
 	units, known = qty[orderID]
 	if !known || units < 1 {
@@ -366,10 +366,10 @@ func orderUnits(qty map[string]int, orderID string) (units int, known bool) {
 	return units, true
 }
 
-// financeShipments toma los envíos creados dentro del periodo.
+// financeShipments takes the shipments created within the period.
 func financeShipments(list ShipmentList, p Period) []financeShipment {
 	type contact struct{ name, phone, city, taxID string }
-	contacts := map[string]contact{} // id de la dirección -> datos del destinatario
+	contacts := map[string]contact{} // address id -> recipient data
 	for _, raw := range list.Included {
 		var inc struct {
 			ID         string `json:"id"`
@@ -438,9 +438,9 @@ func financeShipments(list ShipmentList, p Period) []financeShipment {
 	return out
 }
 
-// summarizeShipments suma el contra entrega, el costo de las guías y la comisión del vendedor.
-// qty trae los datáfonos de cada orden; los envíos sin dato cuentan como 1 y se marcan como estimados.
-// Cada envío usa la comisión vigente el día en que se creó.
+// summarizeShipments adds up cash on delivery, label cost and the seller's commission.
+// qty has each order's terminals; shipments without data count as 1 and are flagged as estimated.
+// Each shipment uses the commission in effect on the day it was created.
 func summarizeShipments(shipments []financeShipment, qty map[string]int, rate CommissionRate) Finance {
 	now := time.Now()
 	f := Finance{Spending: map[string]Money{}, Commission: Commission{PerUnit: rate(now)}}
@@ -480,7 +480,7 @@ func summarizeShipments(shipments []financeShipment, qty map[string]int, rate Co
 	return f
 }
 
-// movements trae los movimientos de la cuenta del periodo (GET /api/v1/transaction_stats), del más nuevo al más antiguo.
+// movements fetches the account's movements for the period (GET /api/v1/transaction_stats), newest first.
 func (c *Client) movements(ctx context.Context, p Period) ([]Movement, error) {
 	var out []Movement
 	for page := 1; page <= maxFinancePages; page++ {
@@ -532,11 +532,11 @@ func (c *Client) movements(ctx context.Context, p Period) ([]Movement, error) {
 	return out, nil
 }
 
-// movementCategory agrupa un movimiento para el resumen de gastos.
+// movementCategory groups a movement for the expense summary.
 func movementCategory(kind, typ, comments string) string {
 	c := strings.ToLower(comments + " " + typ)
 	switch {
-	case kind == "refund": // devolver una protección o una tarifa no es un gasto
+	case kind == "refund": // refunding a protection or a fee isn't an expense
 		return "devolucion"
 	case strings.Contains(c, "protec") || strings.Contains(c, "seguro") || strings.Contains(c, "insurance"):
 		return "proteccion"
@@ -553,7 +553,7 @@ func movementCategory(kind, typ, comments string) string {
 	}
 }
 
-// extraCharges trae los cargos extra detectados en el periodo (GET /api/v1/finance/extra-charges).
+// extraCharges fetches the extra charges detected in the period (GET /api/v1/finance/extra-charges).
 func (c *Client) extraCharges(ctx context.Context, p Period) ([]ExtraCharge, error) {
 	var out []ExtraCharge
 	for page := 1; page <= maxFinancePages; page++ {

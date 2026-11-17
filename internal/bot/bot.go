@@ -1,5 +1,5 @@
-// Package bot recibe los mensajes del vendedor por Telegram, crea la orden en Skydropx
-// y avisa cuando la guía del envío ya está generada.
+// Package bot receives the seller's messages over Telegram, creates the order in Skydropx
+// and notifies when the shipment's label is ready.
 package bot
 
 import (
@@ -23,17 +23,17 @@ import (
 )
 
 type Options struct {
-	Token          string
-	APIBase        string           // vacío = API oficial de Telegram
-	AllowedChatIDs []int64          // chats autorizados (tú y tu vendedor)
-	AdminChatIDs   []int64          // grupo donde se publica cada guía lista
-	GestionChatIDs []int64          // grupo privado que recibe las órdenes nuevas con el botón de generar guía y usa /imprimir
-	DefaultValor   float64          // valor unitario si el mensaje no trae "Valor:"
-	StatePath      string           // archivo JSON con offset y órdenes pendientes
-	CheckEvery     time.Duration    // cada cuánto revisar si hay guías nuevas
-	Settings       *settings.Store  // comisión del vendedor (se cambia con /comision)
-	Customers      *customers.Store // base de clientes en MongoDB (nil si MONGODB_URI no está configurada)
-	CustomersError string           // why MongoDB didn't connect at startup ("" if it did or isn't configured)
+	Token            string
+	APIBase          string           // empty = official Telegram API
+	AllowedChatIDs   []int64          // authorized chats (you and your seller)
+	AdminChatIDs     []int64          // group where each ready label is posted
+	OpsChatIDs       []int64          // private group that receives new orders with the generate-label button and uses /imprimir
+	DefaultUnitPrice float64          // unit price if the message has no "Valor:"
+	StatePath        string           // JSON file with the offset and pending orders
+	CheckEvery       time.Duration    // how often to check for new labels
+	Settings         *settings.Store  // seller's commission (changed with /comision)
+	Customers        *customers.Store // customer database in MongoDB (nil if MONGODB_URI isn't set)
+	CustomersError   string           // why MongoDB didn't connect at startup ("" if it did or isn't configured)
 }
 
 type Bot struct {
@@ -42,8 +42,8 @@ type Bot struct {
 	sky  *skydropx.Client
 	st   *State
 
-	checkMu sync.Mutex // evita que el webhook y la revisión periódica avisen dos veces la misma guía
-	cobroMu sync.Mutex // evita que dos webhooks de entrega avisen dos veces el mismo pago
+	checkMu sync.Mutex // keeps the webhook and the periodic check from announcing the same label twice
+	codMu   sync.Mutex // keeps two delivery webhooks from announcing the same payment twice
 }
 
 func New(opts Options, sky *skydropx.Client) (*Bot, error) {
@@ -54,12 +54,12 @@ func New(opts Options, sky *skydropx.Client) (*Bot, error) {
 	return &Bot{opts: opts, tg: telegram.New(opts.Token, opts.APIBase), sky: sky, st: st}, nil
 }
 
-// Run atiende mensajes y revisa guías hasta que ctx termine.
+// Run handles messages and checks labels until ctx is done.
 func (b *Bot) Run(ctx context.Context) {
-	b.configurarComandos(ctx)
+	b.setupCommands(ctx)
 	b.customersAtStartup(ctx)
-	go b.watchGuias(ctx)
-	go b.watchResumenes(ctx)
+	go b.watchLabels(ctx)
+	go b.watchSummaries(ctx)
 
 	for ctx.Err() == nil {
 		updates, err := b.tg.GetUpdates(ctx, b.st.Offset)
@@ -90,38 +90,38 @@ func (b *Bot) Run(ctx context.Context) {
 }
 
 func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
-	// Tu grupo de gestión: /imprimir y ayuda. Las guías se generan con los botones de cada orden.
-	if b.isGestion(chatID) {
+	// Your ops group: /imprimir and help. Labels are generated with each order's buttons.
+	if b.isOps(chatID) {
 		if strings.HasPrefix(text, "/imprimir") {
-			b.imprimir(ctx, chatID, diasAImprimir(text))
+			b.printLabels(ctx, chatID, daysToPrint(text))
 			return
 		}
 		if strings.HasPrefix(text, "/comision") {
-			b.comandoComision(ctx, chatID, text)
+			b.commissionCommand(ctx, chatID, text)
 			return
 		}
 		if strings.HasPrefix(text, "/resumen") {
-			b.comandoResumen(ctx, chatID, text)
+			b.summaryCommand(ctx, chatID, text)
 			return
 		}
 		if strings.HasPrefix(text, "/deuda") {
-			b.comandoDeuda(ctx, chatID, text)
+			b.debtCommand(ctx, chatID, text)
 			return
 		}
 		if strings.HasPrefix(text, "/publicidad") {
-			b.comandoPublicidad(ctx, chatID, text)
+			b.adsCommand(ctx, chatID, text)
 			return
 		}
 		if strings.HasPrefix(text, "/pagos") {
-			b.comandoPagos(ctx, chatID)
+			b.paymentsCommand(ctx, chatID)
 			return
 		}
 		if strings.HasPrefix(text, "/pago") {
-			b.comandoPago(ctx, chatID, text)
+			b.paymentCommand(ctx, chatID, text)
 			return
 		}
 		if strings.HasPrefix(text, "/novedades") {
-			b.comandoNovedades(ctx, chatID)
+			b.issuesCommand(ctx, chatID)
 			return
 		}
 		if strings.HasPrefix(text, "/clientes") {
@@ -141,42 +141,42 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			return
 		}
 		if strings.HasPrefix(text, "/cliente") {
-			b.comandoCliente(ctx, chatID, text)
+			b.customerCommand(ctx, chatID, text)
 			return
 		}
 		if strings.HasPrefix(text, "/guia") {
-			b.comandoGuia(ctx, chatID, text)
+			b.labelCommand(ctx, chatID, text)
 			return
 		}
 		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-			b.say(ctx, chatID, ayudaGestion)
+			b.say(ctx, chatID, helpOps)
 			return
 		}
 		if !b.isAllowed(chatID) {
-			return // en el grupo de gestión no se crean órdenes
+			return // no orders are created in the ops group
 		}
 	}
-	// El grupo de guías (TELEGRAM_ADMIN_CHAT_IDS) recibe órdenes y guías, pero ahí no se crean pedidos.
+	// The labels group (TELEGRAM_ADMIN_CHAT_IDS) receives orders and labels, but no orders are created there.
 	if !b.isAllowed(chatID) && b.isAdmin(chatID) {
 		if strings.HasPrefix(text, "/cliente") {
-			b.comandoCliente(ctx, chatID, text)
+			b.customerCommand(ctx, chatID, text)
 			return
 		}
 		if strings.HasPrefix(text, "/guia") {
-			b.comandoGuia(ctx, chatID, text)
+			b.labelCommand(ctx, chatID, text)
 			return
 		}
 		if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-			b.say(ctx, chatID, ayudaGrupoGuias)
+			b.say(ctx, chatID, helpLabelsGroup)
 		}
-		return // los demás mensajes del grupo (conversación, reenvíos) se ignoran sin responder
+		return // other messages in the group (conversation, forwards) are ignored without replying
 	}
 	if !b.isAllowed(chatID) {
 		log.Printf("bot: chat no autorizado %d", chatID)
 		b.say(ctx, chatID, fmt.Sprintf("No estás autorizado para usar este bot. Tu ID de chat es <code>%d</code>. Pásaselo al administrador para que te dé acceso.", chatID))
 		return
 	}
-	// La comisión y los resúmenes solo se manejan desde el grupo de gestión.
+	// Commission and summaries are only handled from the ops group.
 	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") ||
 		strings.HasPrefix(text, "/deuda") || strings.HasPrefix(text, "/pago") ||
 		strings.HasPrefix(text, "/publicidad") || strings.HasPrefix(text, "/clientes") || strings.HasPrefix(text, "/autoriza") || strings.HasPrefix(text, "/despachos") ||
@@ -185,21 +185,21 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 		return
 	}
 	if text == "" || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/ayuda") {
-		b.say(ctx, chatID, ayudaVendedor)
+		b.say(ctx, chatID, helpSeller)
 		return
 	}
 	if strings.HasPrefix(text, "/cliente") {
-		b.comandoCliente(ctx, chatID, text)
+		b.customerCommand(ctx, chatID, text)
 		return
 	}
 	if strings.HasPrefix(text, "/guia") {
-		b.comandoGuia(ctx, chatID, text)
+		b.labelCommand(ctx, chatID, text)
 		return
 	}
 	b.createOrder(ctx, chatID, sender, text)
 }
 
-// senderName arma un nombre legible de quien escribió, para el aviso al administrador.
+// senderName builds a readable name of who wrote, for the admin notice.
 func senderName(u *telegram.User) string {
 	if u == nil {
 		return ""
@@ -214,11 +214,11 @@ func senderName(u *telegram.User) string {
 	return name
 }
 
-// duplicateWindow es el tiempo en que un pedido con los mismos datos se considera repetido.
+// duplicateWindow is how long an order with the same data is considered a repeat.
 const duplicateWindow = 24 * time.Hour
 
-// quitarRepetir detecta "REPETIR" en la primera línea: el vendedor confirma que el pedido repetido es nuevo.
-func quitarRepetir(text string) (string, bool) {
+// undoRepeat detects "REPETIR" on the first line: the seller confirms the repeated order is new.
+func undoRepeat(text string) (string, bool) {
 	first, rest, _ := strings.Cut(text, "\n")
 	if strings.EqualFold(strings.Trim(strings.TrimSpace(first), "*_ "), "repetir") {
 		return strings.TrimSpace(rest), true
@@ -226,20 +226,20 @@ func quitarRepetir(text string) (string, bool) {
 	return text, false
 }
 
-// huella identifica un pedido por destinatario, dirección, cantidad y valor, sin importar
-// mayúsculas, tildes, espacios ni signos.
-func huella(d domain.ShipmentData) string {
+// fingerprint identifies an order by recipient, address, quantity and price, ignoring
+// case, accents, spaces and punctuation.
+func fingerprint(d domain.ShipmentData) string {
 	parts := []string{
-		d.Documento, d.Telefono, d.Ciudad, d.Direccion,
-		strconv.Itoa(d.Cantidad), strconv.FormatFloat(d.ValorUnitario, 'f', 0, 64),
+		d.Document, d.Phone, d.City, d.Address,
+		strconv.Itoa(d.Quantity), strconv.FormatFloat(d.UnitPrice, 'f', 0, 64),
 	}
 	for i, p := range parts {
-		parts[i] = normalizar(p)
+		parts[i] = normalize(p)
 	}
 	return strings.Join(parts, "|")
 }
 
-func haceCuanto(t time.Time) string {
+func howLongAgo(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
@@ -251,15 +251,15 @@ func haceCuanto(t time.Time) string {
 	}
 }
 
-// guiaDestino dice dónde se publica la guía, para los mensajes al vendedor.
-func (b *Bot) guiaDestino() string {
+// labelDestination says where the label is posted, for the messages to the seller.
+func (b *Bot) labelDestination() string {
 	if len(b.opts.AdminChatIDs) > 0 {
 		return "al grupo"
 	}
 	return "a este chat"
 }
 
-// isAdmin dice si el chat es el grupo del vendedor (TELEGRAM_ADMIN_CHAT_IDS).
+// isAdmin reports whether the chat is the seller's group (TELEGRAM_ADMIN_CHAT_IDS).
 func (b *Bot) isAdmin(chatID int64) bool {
 	for _, id := range b.opts.AdminChatIDs {
 		if id == chatID {
@@ -279,22 +279,22 @@ func (b *Bot) isAllowed(chatID int64) bool {
 }
 
 func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string) {
-	text, forzar := quitarRepetir(text)
+	text, force := undoRepeat(text)
 	data := parser.ParseWhatsAppMessage(text).Data
-	if data.ValorUnitario <= 0 {
-		data.ValorUnitario = b.opts.DefaultValor
+	if data.UnitPrice <= 0 {
+		data.UnitPrice = b.opts.DefaultUnitPrice
 	}
 	if missing := parser.ValidateShipmentData(data); len(missing) > 0 {
 		b.say(ctx, chatID, "⚠️ Faltan datos para crear la orden: <b>"+html.EscapeString(strings.Join(missing, ", "))+"</b>. Envíame el mensaje completo de nuevo.")
 		return
 	}
 
-	h := huella(data)
-	desde := time.Now().Add(-duplicateWindow)
-	if prev, ok := b.st.findRecent(h, desde); ok && !forzar {
+	h := fingerprint(data)
+	from := time.Now().Add(-duplicateWindow)
+	if prev, ok := b.st.findRecent(h, from); ok && !force {
 		b.say(ctx, chatID, fmt.Sprintf(
 			"⚠️ <b>Esta orden ya se creó</b> hace %s para <b>%s</b> con los mismos datos, así que no la volví a crear.\n\nSi de verdad es un pedido nuevo, envíame el mensaje otra vez escribiendo <code>REPETIR</code> en la primera línea.",
-			haceCuanto(prev.CreatedAt), html.EscapeString(prev.Nombre),
+			howLongAgo(prev.CreatedAt), html.EscapeString(prev.Name),
 		))
 		return
 	}
@@ -308,43 +308,43 @@ func (b *Bot) createOrder(ctx context.Context, chatID int64, sender, text string
 		return
 	}
 
-	// El historial del cliente en Skydropx (no pagó o tardó en recoger) se avisa con la orden.
-	hist, err := b.revisarCliente(ctx, data.Documento, data.Telefono)
+	// The customer's Skydropx history (didn't pay or was slow to pick up) is shown with the order.
+	hist, err := b.checkCustomer(ctx, data.Document, data.Phone)
 	if err != nil {
 		log.Printf("bot: no se pudo revisar el historial del cliente: %v", err)
 	}
-	advertencia := advertenciaGestion(hist)
+	warning := opsWarning(hist)
 
 	if err := b.st.add(Pending{
-		Advertencia: advertencia,
+		Warning:     warning,
 		OrderID:     res.ID,
 		ChatID:      chatID,
-		Nombre:      data.Nombre,
-		Destino:     fmt.Sprintf("%s, %s", data.Ciudad, data.Departamento),
+		Name:        data.Name,
+		Destination: fmt.Sprintf("%s, %s", data.City, data.Department),
 		CreatedAt:   time.Now(),
 		Sender:      senderOrChat(sender, chatID),
 		Data:        &data,
 	}); err != nil {
 		log.Printf("bot: no se pudo guardar la orden pendiente %s: %v", res.ID, err)
 	}
-	if err := b.st.addRecent(Recent{Huella: h, OrderID: res.ID, Nombre: data.Nombre, CreatedAt: time.Now()}, desde); err != nil {
+	if err := b.st.addRecent(Recent{Fingerprint: h, OrderID: res.ID, Name: data.Name, CreatedAt: time.Now()}, from); err != nil {
 		log.Printf("bot: no se pudo guardar la orden reciente %s: %v", res.ID, err)
 	}
 
 	msg := fmt.Sprintf(
 		"✅ <b>Orden creada</b>\n👤 %s\n📍 %s, %s\n💰 Valor unitario: %s\n\nCuando finalicen el envío en Skydropx, la guía y el PDF llegarán %s.",
-		html.EscapeString(data.Nombre), html.EscapeString(data.Ciudad), html.EscapeString(data.Departamento),
-		formatCOP(data.ValorUnitario), b.guiaDestino(),
+		html.EscapeString(data.Name), html.EscapeString(data.City), html.EscapeString(data.Department),
+		formatCOP(data.UnitPrice), b.labelDestination(),
 	)
 	if !res.IsMock {
 		b.recordCustomer(ctx, data, res.ID, senderOrChat(sender, chatID))
 	}
-	msg += advertenciaVendedor(hist)
+	msg += sellerWarning(hist)
 	if res.IsMock {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
 	}
 	b.say(ctx, chatID, msg)
-	b.notifyAdmins(ctx, senderOrChat(sender, chatID), data, res.ID, res.IsMock, advertencia, advertenciaVendedor(hist))
+	b.notifyAdmins(ctx, senderOrChat(sender, chatID), data, res.ID, res.IsMock, warning, sellerWarning(hist))
 }
 
 func senderOrChat(sender string, chatID int64) string {
@@ -354,39 +354,39 @@ func senderOrChat(sender string, chatID int64) string {
 	return sender
 }
 
-// notifyAdmins avisa la orden nueva: al grupo de gestión con el botón para generar la guía
-// y al grupo del vendedor (TELEGRAM_ADMIN_CHAT_IDS) solo como aviso.
-// advertencia va arriba del aviso de gestión; vendedor, al final del aviso del grupo del vendedor.
-func (b *Bot) notifyAdmins(ctx context.Context, sender string, data domain.ShipmentData, orderID string, isMock bool, advertencia, vendedor string) {
-	msg := advertencia + adminOrderText(sender, data)
-	msgVendedor := adminOrderText(sender, data) + vendedor
+// notifyAdmins announces the new order: to the ops group with the button to generate the label
+// and to the seller's group (TELEGRAM_ADMIN_CHAT_IDS) only as a notice.
+// warning goes above the ops notice; seller, at the end of the seller group's notice.
+func (b *Bot) notifyAdmins(ctx context.Context, sender string, data domain.ShipmentData, orderID string, isMock bool, warning, seller string) {
+	msg := warning + adminOrderText(sender, data)
+	sellerMsg := adminOrderText(sender, data) + seller
 	var buttons [][]telegram.Button
 	if isMock {
 		msg += "\n\n<i>(Modo simulación: no se creó nada en Skydropx.)</i>"
 	} else {
-		buttons = botonGenerar(orderID)
+		buttons = generateButton(orderID)
 	}
-	for _, id := range b.gestionChats() {
+	for _, id := range b.opsChats() {
 		if _, err := b.tg.SendMessageWithButtons(ctx, id, msg, buttons); err != nil {
 			log.Printf("bot: no se pudo avisar la orden nueva: %v", err)
 		}
 	}
-	// El grupo del vendedor también ve la orden, pero sin botones: la guía solo se gestiona en el grupo de gestión.
+	// The seller's group also sees the order, but without buttons: the label is only handled in the ops group.
 	for _, id := range b.opts.AdminChatIDs {
-		if b.isGestion(id) {
-			continue // ya recibió el aviso con botones
+		if b.isOps(id) {
+			continue // already got the notice with buttons
 		}
-		b.say(ctx, id, msgVendedor+"\n\n📄 La guía llegará aquí cuando esté lista.")
+		b.say(ctx, id, sellerMsg+"\n\n📄 La guía llegará aquí cuando esté lista.")
 	}
 }
 
-// watchGuias revisa periódicamente las órdenes pendientes y avisa cuando ya tienen guía.
-func (b *Bot) watchGuias(ctx context.Context) {
+// watchLabels periodically checks pending orders and notifies when they have a label.
+func (b *Bot) watchLabels(ctx context.Context) {
 	sleep(ctx, 30*time.Second)
 	ticker := time.NewTicker(b.opts.CheckEvery)
 	defer ticker.Stop()
 	for {
-		b.checkGuias(ctx)
+		b.checkLabels(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -395,7 +395,7 @@ func (b *Bot) watchGuias(ctx context.Context) {
 	}
 }
 
-func (b *Bot) checkGuias(ctx context.Context) {
+func (b *Bot) checkLabels(ctx context.Context) {
 	for _, p := range b.st.snapshotPending() {
 		if ctx.Err() != nil {
 			return
@@ -404,13 +404,13 @@ func (b *Bot) checkGuias(ctx context.Context) {
 	}
 }
 
-// checkPending avisa la guía de una orden pendiente si ya la tiene y la quita de pendientes.
-// Si shipmentIDs viene vacío, se consultan los envíos de la orden en Skydropx.
+// checkPending announces the label of a pending order if it has one and removes it from pending.
+// If shipmentIDs is empty, the order's shipments are looked up in Skydropx.
 func (b *Bot) checkPending(ctx context.Context, p Pending, shipmentIDs []string) {
 	b.checkMu.Lock()
 	defer b.checkMu.Unlock()
 	if !b.st.isPending(p.OrderID) {
-		return // ya se avisó (por el webhook o por la revisión periódica)
+		return // already announced (by the webhook or the periodic check)
 	}
 	if len(shipmentIDs) == 0 {
 		ids, err := b.sky.OrderShipmentIDs(ctx, p.OrderID)
@@ -422,8 +422,8 @@ func (b *Bot) checkPending(ctx context.Context, p Pending, shipmentIDs []string)
 		}
 		shipmentIDs = ids
 	}
-	if sh, ok := b.guiaDeEnvios(ctx, shipmentIDs); ok {
-		// La guía va al grupo (TELEGRAM_ADMIN_CHAT_IDS); si no hay grupo configurado, al chat que pidió la orden.
+	if sh, ok := b.shipmentsLabel(ctx, shipmentIDs); ok {
+		// The label goes to the group (TELEGRAM_ADMIN_CHAT_IDS); if no group is set, to the chat that requested the order.
 		targets := b.opts.AdminChatIDs
 		if len(targets) == 0 {
 			targets = []int64{p.ChatID}
@@ -438,8 +438,8 @@ func (b *Bot) checkPending(ctx context.Context, p Pending, shipmentIDs []string)
 	}
 }
 
-// guiaDeEnvios busca el primer envío de la lista que ya tenga número de guía.
-func (b *Bot) guiaDeEnvios(ctx context.Context, ids []string) (shipmentInfo, bool) {
+// shipmentsLabel finds the first shipment in the list that already has a tracking number.
+func (b *Bot) shipmentsLabel(ctx context.Context, ids []string) (shipmentInfo, bool) {
 	for _, id := range ids {
 		raw, err := b.sky.GetShipment(ctx, id)
 		if err != nil {
@@ -459,7 +459,7 @@ func (b *Bot) guiaDeEnvios(ctx context.Context, ids []string) (shipmentInfo, boo
 	return shipmentInfo{}, false
 }
 
-// shipmentListFromDetail convierte GET /api/v1/shipments/{id} (un solo "data") en la forma de lista.
+// shipmentListFromDetail turns GET /api/v1/shipments/{id} (a single "data") into the list shape.
 func shipmentListFromDetail(raw json.RawMessage) (skydropx.ShipmentList, error) {
 	var d struct {
 		Data     json.RawMessage   `json:"data"`
@@ -496,7 +496,7 @@ func formatCOP(v float64) string {
 	return "$" + string(out)
 }
 
-// ---------- Lectura de envíos de Skydropx ----------
+// ---------- Reading Skydropx shipments ----------
 
 type shipmentInfo struct {
 	orderID     string
@@ -505,9 +505,9 @@ type shipmentInfo struct {
 	service     string
 	label       string
 	trackingURL string
-	onDelivery  string // estado del cobro contra entrega: pending | collected | vacío
-	nombre      string
-	destino     string
+	onDelivery  string // cash-on-delivery collection state: pending | collected | empty
+	fullName    string
+	dest        string
 }
 
 type shipmentIndex []shipmentInfo
@@ -521,19 +521,19 @@ func (idx shipmentIndex) byOrder(orderID string) (shipmentInfo, bool) {
 	return shipmentInfo{}, false
 }
 
-// message arma la guía con el mismo formato de "Mis envíos": *negrita* de WhatsApp y URLs completas,
-// para que el vendedor la copie tal cual al cliente.
+// message builds the label with the same format as "Mis envíos": WhatsApp *bold* and full URLs,
+// so the seller can copy it as is to the customer.
 func (s shipmentInfo) message() string {
-	transportadora := carrierDisplayName(s.carrier)
+	carrierText := carrierDisplayName(s.carrier)
 	if s.service != "" {
-		transportadora += " - " + s.service
+		carrierText += " - " + s.service
 	}
-	seguimiento := s.trackingURL
-	if seguimiento == "" {
-		seguimiento = carrierTrackingURL[normalizar(s.carrier)]
+	followUp := s.trackingURL
+	if followUp == "" {
+		followUp = carrierTrackingURL[normalize(s.carrier)]
 	}
-	if seguimiento == "" {
-		seguimiento = "pendiente"
+	if followUp == "" {
+		followUp = "pendiente"
 	}
 	pdf := s.label
 	if pdf == "" {
@@ -549,13 +549,13 @@ func (s shipmentInfo) message() string {
 			"💰 *Cobro:* %s\n"+
 			"🔎 *Seguimiento:* %s\n\n"+
 			"📄 *Descarga la guía (PDF):*\n%s",
-		html.EscapeString(s.tracking), html.EscapeString(s.nombre), html.EscapeString(s.destino),
-		html.EscapeString(transportadora), cobroTexto(s.onDelivery),
-		html.EscapeString(seguimiento), html.EscapeString(pdf),
+		html.EscapeString(s.tracking), html.EscapeString(s.fullName), html.EscapeString(s.dest),
+		html.EscapeString(carrierText), codText(s.onDelivery),
+		html.EscapeString(followUp), html.EscapeString(pdf),
 	)
 }
 
-func cobroTexto(onDelivery string) string {
+func codText(onDelivery string) string {
 	switch onDelivery {
 	case "collected":
 		return "Cobrado (pago contra entrega)"
@@ -575,7 +575,7 @@ var carrierNames = map[string]string{
 	"ups":             "UPS",
 }
 
-// carrierTrackingURL es la página de seguimiento de cada transportadora, si Skydropx no la envía.
+// carrierTrackingURL is each carrier's tracking page, if Skydropx doesn't send it.
 var carrierTrackingURL = map[string]string{
 	"interrapidisimo": "https://siguetuenvio.interrapidisimo.com/",
 	"servientrega":    "https://www.servientrega.com/wps/portal",
@@ -583,8 +583,8 @@ var carrierTrackingURL = map[string]string{
 	"coordinadora":    "https://coordinadora.com/",
 }
 
-// normalizar deja solo letras sin tilde y números, en minúscula: "Interrapidísimo" -> "interrapidisimo".
-func normalizar(name string) string {
+// normalize keeps only unaccented letters and digits, lowercase: "Interrapidísimo" -> "interrapidisimo".
+func normalize(name string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(name) {
 		switch r {
@@ -607,7 +607,7 @@ func normalizar(name string) string {
 }
 
 func carrierDisplayName(name string) string {
-	if n, ok := carrierNames[normalizar(name)]; ok {
+	if n, ok := carrierNames[normalize(name)]; ok {
 		return n
 	}
 	return strings.TrimSpace(name)
@@ -670,8 +670,8 @@ func parseShipments(list skydropx.ShipmentList) shipmentIndex {
 			onDelivery: s.Attributes.OnDelivery,
 		}
 		if a, ok := inc["address:"+s.Relationships.AddressTo.Data.ID]; ok {
-			info.nombre = a.Attributes.Name
-			info.destino = strings.Trim(a.Attributes.City+", "+a.Attributes.State, ", ")
+			info.fullName = a.Attributes.Name
+			info.dest = strings.Trim(a.Attributes.City+", "+a.Attributes.State, ", ")
 		}
 		for _, p := range s.Relationships.Packages.Data {
 			if pkg, ok := inc["package:"+p.ID]; ok && pkg.Attributes.LabelURL != "" {

@@ -15,12 +15,12 @@ import (
 	"skydropx-automator/internal/domain"
 )
 
-// fakeSkydropx simula la API: el código postal 130001 "no existe" y 130002 sí.
+// fakeSkydropx simulates the API: postal code 130001 "doesn't exist" and 130002 does.
 type fakeSkydropx struct {
 	mu        sync.Mutex
-	quoted    []string       // códigos postales cotizados, en orden
-	quoteBody map[string]any // última cotización recibida
-	shipment  map[string]any // envío recibido
+	quoted    []string       // quoted postal codes, in order
+	quoteBody map[string]any // last quote received
+	shipment  map[string]any // shipment received
 }
 
 func (f *fakeSkydropx) handler(t *testing.T) http.Handler {
@@ -84,13 +84,13 @@ func newTestClient(t *testing.T, f *fakeSkydropx) *Client {
 	})
 }
 
-func TestQuoteLabelYCreateLabel(t *testing.T) {
+func TestQuoteLabelAndCreateLabel(t *testing.T) {
 	f := &fakeSkydropx{}
 	c := newTestClient(t, f)
 	data := domain.ShipmentData{
-		Nombre: "Dagoberto Prada Padilla", Documento: "73576742", Telefono: "3002013421",
-		Departamento: "Bolívar", Ciudad: "Cartagena", Barrio: "Villa Estrella",
-		Direccion: "Cr 92#43-75", Cantidad: 1, ValorUnitario: 60000, CodigoPostal: "130001",
+		Name: "Dagoberto Prada Padilla", Document: "73576742", Phone: "3002013421",
+		Department: "Bolívar", City: "Cartagena", Neighborhood: "Villa Estrella",
+		Address: "Cr 92#43-75", Quantity: 1, UnitPrice: 60000, PostalCode: "130001",
 	}
 
 	q, err := c.QuoteLabel(context.Background(), data)
@@ -144,12 +144,12 @@ func TestPostalCandidates(t *testing.T) {
 func TestLabelsSince(t *testing.T) {
 	list := ShipmentList{
 		Data: []json.RawMessage{
-			// Hoy en Colombia (llega en UTC): sí.
+			// Today in Colombia (comes in UTC): yes.
 			json.RawMessage(`{"attributes":{"created_at":"2026-11-14T22:30:00Z","master_tracking_number":"B"},"relationships":{"packages":{"data":[{"id":"p2"}]}}}`),
 			json.RawMessage(`{"attributes":{"created_at":"2026-11-14T08:00:00-05:00","master_tracking_number":"A"},"relationships":{"packages":{"data":[{"id":"p1"}]}}}`),
-			// Ayer en Colombia aunque en UTC ya sea 14: no.
+			// Yesterday in Colombia even though it is already the 14th in UTC: no.
 			json.RawMessage(`{"attributes":{"created_at":"2026-11-14T03:00:00Z","master_tracking_number":"AYER"},"relationships":{"packages":{"data":[{"id":"p3"}]}}}`),
-			// Hoy pero sin PDF todavía: no.
+			// Today but without a PDF yet: no.
 			json.RawMessage(`{"attributes":{"created_at":"2026-11-14T10:00:00-05:00","master_tracking_number":"SINPDF"},"relationships":{"packages":{"data":[{"id":"p4"}]}}}`),
 		},
 		Included: []json.RawMessage{
@@ -164,7 +164,7 @@ func TestLabelsSince(t *testing.T) {
 	if len(got) != 2 || got[0].Tracking != "A" || got[1].Tracking != "B" {
 		t.Fatalf("solo hoy = %+v, se esperaban A y B en orden", got)
 	}
-	// Con 2 días entra también la de ayer, y queda primero por ser la más antigua.
+	// With 2 days yesterday's is included too, and comes first as the oldest.
 	got = labelsSince(list, now, 2)
 	if len(got) != 3 || got[0].Tracking != "AYER" {
 		t.Fatalf("últimos 2 días = %+v, se esperaban AYER, A y B", got)
@@ -173,7 +173,7 @@ func TestLabelsSince(t *testing.T) {
 
 func TestSaveRecipientAddress(t *testing.T) {
 	var mu sync.Mutex
-	var guardadas []map[string]any
+	var savedAliases []map[string]any
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"access_token":"tok","expires_in":7200}`)
@@ -182,7 +182,7 @@ func TestSaveRecipientAddress(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		var data []string
-		for _, g := range guardadas {
+		for _, g := range savedAliases {
 			attrs := g["address_attributes"].(map[string]any)
 			data = append(data, `{"alias_name":"`+g["alias_name"].(string)+`","address_type":"to","address":{"street1":"`+attrs["street1"].(string)+`"}}`)
 		}
@@ -192,7 +192,7 @@ func TestSaveRecipientAddress(t *testing.T) {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		mu.Lock()
-		guardadas = append(guardadas, body["address_template"].(map[string]any))
+		savedAliases = append(savedAliases, body["address_template"].(map[string]any))
 		mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{"data":{"id":"tpl-1"}}`)
@@ -202,17 +202,17 @@ func TestSaveRecipientAddress(t *testing.T) {
 	c := NewClient(config.Config{SkydropxMode: "live", SkydropxBaseURL: srv.URL, SkydropxClientID: "id",
 		SkydropxClientSecret: "secret", OriginEmail: "tienda@example.com"})
 
-	data := domain.ShipmentData{Nombre: "Dagoberto Prada", Telefono: "3002013421", Departamento: "Bolívar",
-		Ciudad: "Cartagena", Barrio: "Villa Estrella", Direccion: "Cr 92#43-75"}
-	for i := 0; i < 2; i++ { // el segundo intento no debe duplicarla
+	data := domain.ShipmentData{Name: "Dagoberto Prada", Phone: "3002013421", Department: "Bolívar",
+		City: "Cartagena", Neighborhood: "Villa Estrella", Address: "Cr 92#43-75"}
+	for i := 0; i < 2; i++ { // the second attempt must not duplicate it
 		if err := c.SaveRecipientAddress(context.Background(), data, "130002"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(guardadas) != 1 {
-		t.Fatalf("se guardaron %d direcciones, debe ser 1", len(guardadas))
+	if len(savedAliases) != 1 {
+		t.Fatalf("se guardaron %d direcciones, debe ser 1", len(savedAliases))
 	}
-	g := guardadas[0]
+	g := savedAliases[0]
 	attrs := g["address_attributes"].(map[string]any)
 	if g["alias_name"] != "Dagoberto Prada" || g["address_type"] != "to" || g["default"] != nil {
 		t.Fatalf("plantilla inesperada: %v", g)

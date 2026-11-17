@@ -11,27 +11,27 @@ func TestValidWebhookAuth(t *testing.T) {
 	body := []byte(`{"data":{"type":"packages"}}`)
 	mac := hmac.New(sha512.New, []byte("secreto"))
 	mac.Write(body)
-	firma := hex.EncodeToString(mac.Sum(nil))
-	alterada := "ff" + firma[2:]
-	if firma[:2] == "ff" {
-		alterada = "00" + firma[2:]
+	signature := hex.EncodeToString(mac.Sum(nil))
+	tampered := "ff" + signature[2:]
+	if signature[:2] == "ff" {
+		tampered = "00" + signature[2:]
 	}
 
-	casos := []struct {
-		nombre, header, secret string
-		want                   bool
+	cases := []struct {
+		fullName, header, secret string
+		want                     bool
 	}{
-		{"hmac correcto", "HMAC " + firma, "secreto", true},
-		{"hmac con otra clave", "HMAC " + firma, "otra", false},
-		{"hmac alterado", "HMAC " + alterada, "secreto", false},
+		{"hmac correcto", "HMAC " + signature, "secreto", true},
+		{"hmac con otra clave", "HMAC " + signature, "otra", false},
+		{"hmac alterado", "HMAC " + tampered, "secreto", false},
 		{"bearer correcto", "Bearer secreto", "secreto", true},
 		{"bearer incorrecto", "Bearer otro", "secreto", false},
 		{"sin encabezado", "", "secreto", false},
 		{"sin clave configurada", "Bearer ", "", false},
 	}
-	for _, c := range casos {
+	for _, c := range cases {
 		if got := validWebhookAuth(c.header, body, c.secret); got != c.want {
-			t.Errorf("%s: got %v, want %v", c.nombre, got, c.want)
+			t.Errorf("%s: got %v, want %v", c.fullName, got, c.want)
 		}
 	}
 }

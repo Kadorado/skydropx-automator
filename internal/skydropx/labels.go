@@ -16,30 +16,30 @@ import (
 	"skydropx-automator/internal/parser"
 )
 
-// LabelCarrier es la transportadora con la que el bot genera las guías.
+// LabelCarrier is the carrier the bot generates labels with.
 const LabelCarrier = "interrapidisimo"
 
 const (
-	// Si Skydropx no reconoce el código postal de la tabla, se prueban otros de la misma ciudad
-	// (mismos 4 primeros dígitos, terminaciones 01 a maxPostalSuffix).
+	// If Skydropx doesn't recognize the postal code from the table, others from the same city are tried
+	// (same first 4 digits, endings 01 to maxPostalSuffix).
 	maxPostalSuffix  = 20
-	postalRetryPause = 600 * time.Millisecond // el límite de la API es de 2 solicitudes por segundo
+	postalRetryPause = 600 * time.Millisecond // the API limit is 2 requests per second
 )
 
-// colombia es la hora de Colombia (UTC-5, sin horario de verano) para contar los días de las guías.
+// colombia is Colombia time (UTC-5, no daylight saving) for counting label days.
 var colombia = time.FixedZone("COT", -5*3600)
 
-// LabelQuote es la tarifa de Interrapidísimo lista para confirmar.
+// LabelQuote is the Interrapidísimo rate ready to confirm.
 type LabelQuote struct {
 	RateID     string  `json:"rate_id"`
 	Total      float64 `json:"total"`
 	Days       int     `json:"days"`
 	Service    string  `json:"service"`
-	PostalCode string  `json:"postal_code"` // código postal de destino que Skydropx aceptó
+	PostalCode string  `json:"postal_code"` // destination postal code Skydropx accepted
 }
 
-// QuoteLabel cotiza el envío solo con Interrapidísimo y devuelve la tarifa más barata.
-// Si Skydropx no reconoce el código postal de destino, prueba otros códigos de la misma ciudad.
+// QuoteLabel quotes the shipment only with Interrapidísimo and returns the cheapest rate.
+// If Skydropx doesn't recognize the destination postal code, it tries other codes from the same city.
 func (c *Client) QuoteLabel(ctx context.Context, data domain.ShipmentData) (LabelQuote, error) {
 	if c.isMock() {
 		return LabelQuote{}, ErrMockMode
@@ -48,12 +48,12 @@ func (c *Client) QuoteLabel(ctx context.Context, data domain.ShipmentData) (Labe
 	if err != nil {
 		return LabelQuote{}, err
 	}
-	postal := strings.TrimSpace(data.CodigoPostal)
+	postal := strings.TrimSpace(data.PostalCode)
 	if postal == "" {
-		postal = parser.LookupPostalCode(data.Ciudad)
+		postal = parser.LookupPostalCode(data.City)
 	}
 	if postal == "" {
-		return LabelQuote{}, fmt.Errorf("no tengo código postal para %s. Vuelve a crear la orden con la línea \"Código postal: XXXXXX\"", data.Ciudad)
+		return LabelQuote{}, fmt.Errorf("no tengo código postal para %s. Vuelve a crear la orden con la línea \"Código postal: XXXXXX\"", data.City)
 	}
 
 	q, failMsg, err := c.quoteLabelWithPostal(ctx, data, originID, postal)
@@ -72,7 +72,7 @@ func (c *Client) QuoteLabel(ctx context.Context, data domain.ShipmentData) (Labe
 			return q, labelQuoteError(failMsg, err)
 		}
 	}
-	return LabelQuote{}, fmt.Errorf("Skydropx no reconoce el código postal %s de %s ni otros cercanos (%s). Vuelve a crear la orden con la línea \"Código postal: XXXXXX\"", postal, data.Ciudad, firstMsg)
+	return LabelQuote{}, fmt.Errorf("Skydropx no reconoce el código postal %s de %s ni otros cercanos (%s). Vuelve a crear la orden con la línea \"Código postal: XXXXXX\"", postal, data.City, firstMsg)
 }
 
 func labelQuoteError(failMsg string, err error) error {
@@ -85,12 +85,12 @@ func labelQuoteError(failMsg string, err error) error {
 	return nil
 }
 
-// quoteLabelWithPostal cotiza con un código postal concreto. failMsg explica por qué no hubo tarifa.
+// quoteLabelWithPostal quotes with a specific postal code. failMsg explains why there was no rate.
 func (c *Client) quoteLabelWithPostal(ctx context.Context, data domain.ShipmentData, originID, postal string) (LabelQuote, string, error) {
-	qty := maxInt(1, data.Cantidad)
+	qty := maxInt(1, data.Quantity)
 	body := map[string]any{
 		"quotation": map[string]any{
-			// La dirección guardada rellena el origen: su código postal debe coincidir con el del envío.
+			// The saved address fills the origin: its postal code must match the shipment's.
 			"address_from": map[string]any{
 				"address_template_id": originID,
 				"country_code":        c.cfg.OriginCountry,
@@ -98,8 +98,8 @@ func (c *Client) quoteLabelWithPostal(ctx context.Context, data domain.ShipmentD
 			"address_to": map[string]any{
 				"country_code": "CO",
 				"postal_code":  postal,
-				"area_level1":  data.Departamento,
-				"area_level2":  data.Ciudad,
+				"area_level1":  data.Department,
+				"area_level2":  data.City,
 			},
 			"parcels": []map[string]any{
 				{
@@ -107,7 +107,7 @@ func (c *Client) quoteLabelWithPostal(ctx context.Context, data domain.ShipmentD
 					"width":           c.cfg.DefaultWidthCm,
 					"height":          c.cfg.DefaultHeightCm,
 					"weight":          c.cfg.DefaultWeightKg * float64(qty),
-					"declared_amount": data.ValorUnitario * float64(qty),
+					"declared_amount": data.UnitPrice * float64(qty),
 				},
 			},
 			"cash_on_delivery":        true,
@@ -127,7 +127,7 @@ func (c *Client) quoteLabelWithPostal(ctx context.Context, data domain.ShipmentD
 	return q, "", nil
 }
 
-// cheapestRate elige la tarifa exitosa más barata de la transportadora.
+// cheapestRate picks the carrier's cheapest successful rate.
 func cheapestRate(raw []json.RawMessage, carrier string) (LabelQuote, bool, string) {
 	var best LabelQuote
 	found := false
@@ -169,19 +169,19 @@ func cheapestRate(raw []json.RawMessage, carrier string) (LabelQuote, bool, stri
 	return LabelQuote{}, false, firstErr
 }
 
-// parseAmount acepta montos que llegan como número o como texto ("150.0").
+// parseAmount accepts amounts that come as a number or as text ("150.0").
 func parseAmount(raw json.RawMessage) float64 {
 	s := strings.Trim(strings.TrimSpace(string(raw)), `"`)
 	v, _ := strconv.ParseFloat(s, 64)
 	return v
 }
 
-// isUnknownPostal indica si Skydropx rechazó el código postal de destino por no existir.
+// isUnknownPostal reports whether Skydropx rejected the destination postal code as nonexistent.
 func isUnknownPostal(msg string) bool {
 	return strings.Contains(msg, "postal_code")
 }
 
-// postalCandidates devuelve otros códigos de la misma ciudad: 130001 -> 130002 … 130020.
+// postalCandidates returns other codes from the same city: 130001 -> 130002 … 130020.
 func postalCandidates(postal string) []string {
 	if len(postal) != 6 {
 		return nil
@@ -195,8 +195,8 @@ func postalCandidates(postal string) []string {
 	return out
 }
 
-// CreateLabel crea el envío de la orden con la tarifa cotizada (POST /api/v1/shipments),
-// sin Protección Plus. La guía la genera Skydropx después; devuelve el ID del envío.
+// CreateLabel creates the order's shipment with the quoted rate (POST /api/v1/shipments),
+// without Protección Plus. Skydropx generates the label afterwards; it returns the shipment ID.
 func (c *Client) CreateLabel(ctx context.Context, orderID string, q LabelQuote, data domain.ShipmentData) (string, error) {
 	if c.isMock() {
 		return "", ErrMockMode
@@ -205,11 +205,11 @@ func (c *Client) CreateLabel(ctx context.Context, orderID string, q LabelQuote, 
 	if err != nil {
 		return "", err
 	}
-	email := strings.TrimSpace(data.Correo)
+	email := strings.TrimSpace(data.Email)
 	if email == "" {
-		email = c.cfg.OriginEmail // el correo del destinatario es obligatorio
+		email = c.cfg.OriginEmail // the recipient's email is required
 	}
-	reference := strings.TrimSpace(data.Barrio)
+	reference := strings.TrimSpace(data.Neighborhood)
 	if reference == "" {
 		reference = "Sin referencia"
 	}
@@ -217,7 +217,7 @@ func (c *Client) CreateLabel(ctx context.Context, orderID string, q LabelQuote, 
 		"shipment": map[string]any{
 			"rate_id":         q.RateID,
 			"order_id":        orderID,
-			"unique_shipment": true, // si el botón se toca dos veces, Skydropx no crea otra guía con la misma tarifa
+			"unique_shipment": true, // if the button is tapped twice, Skydropx doesn't create another label with the same rate
 			"printing_format": "standard",
 			"address_from": map[string]any{
 				"address_template_id": originID,
@@ -229,18 +229,18 @@ func (c *Client) CreateLabel(ctx context.Context, orderID string, q LabelQuote, 
 				"reference":           truncate(c.cfg.OriginReference, 30),
 			},
 			"address_to": map[string]any{
-				"street1":       data.Direccion,
-				"name":          truncate(data.Nombre, 30),
-				"company":       truncate(data.Nombre, 60),
-				"phone":         data.Telefono,
+				"street1":       data.Address,
+				"name":          truncate(data.Name, 30),
+				"company":       truncate(data.Name, 60),
+				"phone":         data.Phone,
 				"email":         email,
 				"reference":     truncate(reference, 40),
-				"tax_id_number": data.Documento,
+				"tax_id_number": data.Document,
 			},
 			"packages": []map[string]any{
 				{
 					"package_number":    "1",
-					"package_protected": false, // sin Protección Plus
+					"package_protected": false, // without Protección Plus
 					"package_content":   c.cfg.DefaultContent,
 					"package_type":      "4G",
 				},
@@ -276,7 +276,7 @@ func (c *Client) CreateLabel(ctx context.Context, orderID string, q LabelQuote, 
 	if err := json.Unmarshal(respBody, &created); err != nil || created.Data.ID == "" {
 		return "", fmt.Errorf("respuesta inesperada de Skydropx al crear el envío")
 	}
-	c.forgetShipmentList() // la guía nueva debe aparecer en la próxima consulta
+	c.forgetShipmentList() // the new label must show up in the next lookup
 	return created.Data.ID, nil
 }
 
@@ -288,15 +288,15 @@ func truncate(s string, max int) string {
 	return s
 }
 
-// PrintLabel es una guía con PDF, lista para imprimir.
+// PrintLabel is a label with a PDF, ready to print.
 type PrintLabel struct {
 	Tracking  string
 	LabelURL  string
 	CreatedAt time.Time
 }
 
-// RecentLabels devuelve las guías con PDF de los últimos days días contando hoy (hora de Colombia),
-// de la más antigua a la más nueva. days = 1 es solo hoy.
+// RecentLabels returns the labels with a PDF from the last days days including today (Colombia time),
+// oldest first. days = 1 is today only.
 func (c *Client) RecentLabels(ctx context.Context, days int) ([]PrintLabel, error) {
 	list, err := c.ListShipments(ctx)
 	if err != nil {
@@ -305,8 +305,8 @@ func (c *Client) RecentLabels(ctx context.Context, days int) ([]PrintLabel, erro
 	return labelsSince(list, time.Now().In(colombia), days), nil
 }
 
-// labelsSince filtra los envíos con PDF creados desde el inicio del día de hace days-1 días
-// (en la zona de now) hasta now.
+// labelsSince filters the shipments with a PDF created from the start of the day days-1 days ago
+// (in now's zone) until now.
 func labelsSince(list ShipmentList, now time.Time, days int) []PrintLabel {
 	labelByPackage := map[string]string{}
 	for _, raw := range list.Included {
@@ -364,7 +364,7 @@ func labelsSince(list ShipmentList, now time.Time, days int) []PrintLabel {
 	return out
 }
 
-// parseTime acepta las fechas de Skydropx con o sin zona horaria.
+// parseTime accepts Skydropx dates with or without a time zone.
 func parseTime(s string) (time.Time, bool) {
 	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z07:00", "2006-01-02 15:04:05 -0700", "2006-01-02 15:04:05"} {
 		if t, err := time.Parse(layout, s); err == nil {

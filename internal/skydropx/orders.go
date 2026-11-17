@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// OrderShipmentIDs devuelve los IDs de envío que Skydropx asoció a una orden (GET /api/v1/orders/{id}).
-// Mientras la orden no tenga envío, la lista va vacía.
+// OrderShipmentIDs returns the shipment IDs Skydropx linked to an order (GET /api/v1/orders/{id}).
+// While the order has no shipment, the list is empty.
 func (c *Client) OrderShipmentIDs(ctx context.Context, orderID string) ([]string, error) {
 	if c.isMock() {
 		return nil, ErrMockMode
@@ -49,22 +49,22 @@ func (c *Client) OrderShipmentIDs(ctx context.Context, orderID string) ([]string
 	return ids, nil
 }
 
-// maxQuantityLookups limita cuántas órdenes se consultan por solicitud (una página de "Mis envíos").
+// maxQuantityLookups limits how many orders are looked up per request (one page of "Mis envíos").
 const maxQuantityLookups = 20
 
 var (
 	quantityMu    sync.Mutex
-	quantityCache = map[string]int{}     // la cantidad de una orden no cambia: se guarda mientras corra la app
-	productCache  = map[string]float64{} // valor del producto de la orden (cantidad × precio de cada artículo)
+	quantityCache = map[string]int{}     // an order's quantity doesn't change: it is kept while the app runs
+	productCache  = map[string]float64{} // order's product value (quantity × price of each item)
 )
 
-// OrderQuantities devuelve la cantidad total de artículos de cada orden (suma de "quantity" de sus items).
-// Las órdenes que no se pueden consultar se omiten del resultado.
+// OrderQuantities returns the total item count of each order (sum of the "quantity" of its items).
+// Orders that can't be looked up are left out of the result.
 func (c *Client) OrderQuantities(ctx context.Context, orderIDs []string) (map[string]int, error) {
 	return c.orderQuantitiesUpTo(ctx, orderIDs, maxQuantityLookups)
 }
 
-// orderQuantitiesUpTo es OrderQuantities con un tope propio de consultas nuevas (las de caché no cuentan).
+// orderQuantitiesUpTo is OrderQuantities with its own cap on new lookups (cached ones don't count).
 func (c *Client) orderQuantitiesUpTo(ctx context.Context, orderIDs []string, maxLookups int) (map[string]int, error) {
 	if c.isMock() {
 		return nil, ErrMockMode
@@ -87,7 +87,7 @@ func (c *Client) orderQuantitiesUpTo(ctx context.Context, orderIDs []string, max
 			break
 		}
 		if fetched > 0 {
-			time.Sleep(trackSpacing) // límite de 2 solicitudes por segundo
+			time.Sleep(trackSpacing) // limit of 2 requests per second
 		}
 		fetched++
 		q, product, err := c.orderQuantity(ctx, id)
@@ -103,7 +103,7 @@ func (c *Client) orderQuantitiesUpTo(ctx context.Context, orderIDs []string, max
 	return out, nil
 }
 
-// orderProducts devuelve el valor del producto de las órdenes ya consultadas (sin pedir nada nuevo).
+// orderProducts returns the product value of orders already looked up (without requesting anything new).
 func orderProducts(orderIDs []string) map[string]float64 {
 	quantityMu.Lock()
 	defer quantityMu.Unlock()
@@ -116,7 +116,7 @@ func orderProducts(orderIDs []string) map[string]float64 {
 	return out
 }
 
-// orderQuantity devuelve la cantidad de artículos de la orden y el valor del producto (cantidad × precio).
+// orderQuantity returns the order's item count and product value (quantity × price).
 func (c *Client) orderQuantity(ctx context.Context, orderID string) (int, float64, error) {
 	body, status, err := c.get(ctx, c.cfg.SkydropxBaseURL+"/api/v1/orders/"+url.PathEscape(orderID))
 	if err != nil {

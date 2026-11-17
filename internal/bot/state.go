@@ -11,45 +11,45 @@ import (
 	"skydropx-automator/internal/skydropx"
 )
 
-// Pending es una orden creada por el bot que todavía no tiene guía.
+// Pending is an order created by the bot that doesn't have a label yet.
 type Pending struct {
-	OrderID   string    `json:"order_id"`
-	ChatID    int64     `json:"chat_id"`
-	Nombre    string    `json:"nombre"`
-	Destino   string    `json:"destino"`
-	CreatedAt time.Time `json:"created_at"`
+	OrderID     string    `json:"order_id"`
+	ChatID      int64     `json:"chat_id"`
+	Name        string    `json:"nombre"`
+	Destination string    `json:"destino"`
+	CreatedAt   time.Time `json:"created_at"`
 
-	// Para generar la guía desde Telegram (vacíos en órdenes creadas antes de esta función).
+	// To generate the label from Telegram (empty in orders created before this feature).
 	Sender         string               `json:"sender,omitempty"`
 	Data           *domain.ShipmentData `json:"data,omitempty"`
 	Quote          *skydropx.LabelQuote `json:"quote,omitempty"`
 	LabelRequested bool                 `json:"label_requested,omitempty"`
 
-	// Advertencia es el historial del cliente (no pagó o tardó en recoger) que va arriba de la orden;
-	// con advertencia, generar la guía pide confirmación (HistorialAceptado).
-	Advertencia       string `json:"advertencia,omitempty"`
-	HistorialAceptado bool   `json:"historial_aceptado,omitempty"`
+	// Warning is the customer's history (didn't pay or was slow to pick up) shown above the order;
+	// with a warning, generating the label asks for confirmation (HistoryAccepted).
+	Warning         string `json:"advertencia,omitempty"`
+	HistoryAccepted bool   `json:"historial_aceptado,omitempty"`
 }
 
-// Recent es una orden creada hace poco, para detectar pedidos repetidos.
+// Recent is a recently created order, to detect repeated orders.
 type Recent struct {
-	Huella    string    `json:"huella"`
-	OrderID   string    `json:"order_id"`
-	Nombre    string    `json:"nombre"`
-	CreatedAt time.Time `json:"created_at"`
+	Fingerprint string    `json:"huella"`
+	OrderID     string    `json:"order_id"`
+	Name        string    `json:"nombre"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
-// State se guarda en disco para no perder el progreso al reiniciar.
+// State is saved to disk so progress isn't lost on restart.
 type State struct {
 	Offset  int64     `json:"offset"`
 	Pending []Pending `json:"pending"`
 	Recent  []Recent  `json:"recent"`
 
-	// Estado de cobro ya avisado por envío (collected | failed), para no repetir el aviso.
-	Cobros map[string]string `json:"cobros,omitempty"`
+	// Collection state already announced per shipment (collected | failed), so the notice isn't repeated.
+	CODNotices map[string]string `json:"cobros,omitempty"`
 
-	// Avisos de problemas de entrega ya enviados (envío:estado:día -> día), para no repetirlos.
-	Avisos map[string]string `json:"avisos,omitempty"`
+	// Delivery problem notices already sent (shipment:state:day -> day), so they aren't repeated.
+	IssueNotices map[string]string `json:"avisos,omitempty"`
 
 	// Customers that couldn't be saved in the customer list, kept until a retry works.
 	UnsavedCustomers []UnsavedCustomer `json:"unsaved_customers,omitempty"`
@@ -60,9 +60,9 @@ type State struct {
 	// Day (YYYY-MM-DD) of the last morning reminder of labels left to dispatch.
 	LastDispatchReminder string `json:"last_dispatch_reminder,omitempty"`
 
-	// Último día (AAAA-MM-DD) en que se mandó cada resumen automático.
-	UltimoResumenDiario  string `json:"ultimo_resumen_diario,omitempty"`
-	UltimoResumenSemanal string `json:"ultimo_resumen_semanal,omitempty"`
+	// Last day (YYYY-MM-DD) each automatic summary was sent.
+	LastDailySummary  string `json:"ultimo_resumen_diario,omitempty"`
+	LastWeeklySummary string `json:"ultimo_resumen_semanal,omitempty"`
 
 	mu   sync.Mutex
 	path string
@@ -84,7 +84,7 @@ func loadState(path string) (*State, error) {
 	return s, nil
 }
 
-// save escribe el estado de forma atómica (archivo temporal + renombrado).
+// save writes the state atomically (temp file + rename).
 func (s *State) save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -122,7 +122,7 @@ func (s *State) remove(orderID string) error {
 	return s.save()
 }
 
-// getPending devuelve una copia de la orden pendiente.
+// getPending returns a copy of the pending order.
 func (s *State) getPending(orderID string) (Pending, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -134,7 +134,7 @@ func (s *State) getPending(orderID string) (Pending, bool) {
 	return Pending{}, false
 }
 
-// updatePending modifica la orden pendiente y guarda. Devuelve false si ya no está pendiente.
+// updatePending modifies the pending order and saves. Returns false if it is no longer pending.
 func (s *State) updatePending(orderID string, fn func(*Pending)) (bool, error) {
 	s.mu.Lock()
 	found := false
@@ -170,19 +170,19 @@ func (s *State) isPending(orderID string) bool {
 	return false
 }
 
-// findRecent busca una orden con la misma huella creada después de since.
-func (s *State) findRecent(huella string, since time.Time) (Recent, bool) {
+// findRecent looks for an order with the same fingerprint created after since.
+func (s *State) findRecent(fingerprint string, since time.Time) (Recent, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, r := range s.Recent {
-		if r.Huella == huella && r.CreatedAt.After(since) {
+		if r.Fingerprint == fingerprint && r.CreatedAt.After(since) {
 			return r, true
 		}
 	}
 	return Recent{}, false
 }
 
-// addRecent registra una orden y descarta las anteriores a since.
+// addRecent records an order and drops the ones before since.
 func (s *State) addRecent(r Recent, since time.Time) error {
 	s.mu.Lock()
 	kept := s.Recent[:0]
@@ -204,57 +204,57 @@ func (s *State) snapshotPending() []Pending {
 	return out
 }
 
-// marcarCobro guarda el estado de cobro de un envío. Devuelve false si ya tenía ese estado (ya se avisó).
-func (s *State) marcarCobro(id, status string) (bool, error) {
+// markCOD saves a shipment's collection state. Returns false if it already had that state (already announced).
+func (s *State) markCOD(id, status string) (bool, error) {
 	s.mu.Lock()
-	if s.Cobros[id] == status {
+	if s.CODNotices[id] == status {
 		s.mu.Unlock()
 		return false, nil
 	}
-	if s.Cobros == nil {
-		s.Cobros = map[string]string{}
+	if s.CODNotices == nil {
+		s.CODNotices = map[string]string{}
 	}
-	s.Cobros[id] = status
+	s.CODNotices[id] = status
 	s.mu.Unlock()
 	return true, s.save()
 }
 
-// marcarAviso registra un aviso del día (AAAA-MM-DD). Devuelve false si ya se había enviado.
-// Los avisos de más de 30 días se olvidan para que el archivo no crezca sin fin.
-func (s *State) marcarAviso(key, day string) (bool, error) {
+// markNotice records a notice for the day (YYYY-MM-DD). Returns false if it was already sent.
+// Notices older than 30 days are forgotten so the file doesn't grow forever.
+func (s *State) markNotice(key, day string) (bool, error) {
 	s.mu.Lock()
-	if _, ok := s.Avisos[key]; ok {
+	if _, ok := s.IssueNotices[key]; ok {
 		s.mu.Unlock()
 		return false, nil
 	}
-	if s.Avisos == nil {
-		s.Avisos = map[string]string{}
+	if s.IssueNotices == nil {
+		s.IssueNotices = map[string]string{}
 	}
 	if t, err := time.Parse("2006-01-02", day); err == nil {
-		limite := t.AddDate(0, 0, -30).Format("2006-01-02")
-		for k, d := range s.Avisos {
-			if d < limite {
-				delete(s.Avisos, k)
+		limit := t.AddDate(0, 0, -30).Format("2006-01-02")
+		for k, d := range s.IssueNotices {
+			if d < limit {
+				delete(s.IssueNotices, k)
 			}
 		}
 	}
-	s.Avisos[key] = day
+	s.IssueNotices[key] = day
 	s.mu.Unlock()
 	return true, s.save()
 }
 
-// resumenPendiente dice si el resumen (diario o semanal) de day todavía no se mandó, y lo marca como enviado.
-func (s *State) resumenPendiente(semanal bool, day string) (bool, error) {
+// summaryDue reports whether the (daily or weekly) summary for day hasn't been sent yet, and marks it as sent.
+func (s *State) summaryDue(weekly bool, day string) (bool, error) {
 	s.mu.Lock()
-	ultimo := &s.UltimoResumenDiario
-	if semanal {
-		ultimo = &s.UltimoResumenSemanal
+	latest := &s.LastDailySummary
+	if weekly {
+		latest = &s.LastWeeklySummary
 	}
-	if *ultimo == day {
+	if *latest == day {
 		s.mu.Unlock()
 		return false, nil
 	}
-	*ultimo = day
+	*latest = day
 	s.mu.Unlock()
 	return true, s.save()
 }

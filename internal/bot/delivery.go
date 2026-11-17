@@ -14,14 +14,14 @@ import (
 	"skydropx-automator/internal/skydropx"
 )
 
-// buscarEnvio busca en la cuenta el envío por ID o por número de guía, con cliente, teléfono y ciudad.
-// ok es false si no está en la cuenta; err es ErrMockMode si no hay conexión real con Skydropx.
-func (b *Bot) buscarEnvio(ctx context.Context, id, tracking string) (e skydropx.CODShipment, ok bool, err error) {
-	envios, err := b.sky.CODShipments(ctx)
+// findShipment looks up the shipment in the account by ID or tracking number, with customer, phone and city.
+// ok is false if it isn't in the account; err is ErrMockMode if there is no real connection to Skydropx.
+func (b *Bot) findShipment(ctx context.Context, id, tracking string) (e skydropx.CODShipment, ok bool, err error) {
+	shps, err := b.sky.CODShipments(ctx)
 	if err != nil {
 		return e, false, err
 	}
-	for _, x := range envios {
+	for _, x := range shps {
 		if (id != "" && x.ID == id) || (tracking != "" && x.Tracking == tracking) {
 			return x, true, nil
 		}
@@ -29,8 +29,8 @@ func (b *Bot) buscarEnvio(ctx context.Context, id, tracking string) (e skydropx.
 	return e, false, nil
 }
 
-// estadoGuia traduce el estado técnico del último evento de rastreo a algo claro para el cliente.
-func estadoGuia(st skydropx.Status) string {
+// labelState translates the technical state of the last tracking event into something clear for the customer.
+func labelState(st skydropx.Status) string {
 	switch st.Raw {
 	case "created":
 		return "📄 Guía creada; la transportadora aún no recoge el paquete"
@@ -57,8 +57,8 @@ func estadoGuia(st skydropx.Status) string {
 	return "Sin eventos de rastreo todavía"
 }
 
-// waLink arma un enlace de WhatsApp al teléfono del cliente con el mensaje ya escrito ("" si el teléfono
-// no sirve). Los celulares colombianos de 10 dígitos llevan el indicativo 57.
+// waLink builds a WhatsApp link to the customer's phone with the message already written ("" if the phone
+// is unusable). 10-digit Colombian mobiles get the 57 country code.
 func waLink(phone, msg string) string {
 	var d strings.Builder
 	for _, r := range phone {
@@ -76,28 +76,28 @@ func waLink(phone, msg string) string {
 	return "https://wa.me/" + n + "?text=" + url.QueryEscape(msg)
 }
 
-// mensajeEnRuta es el WhatsApp para avisarle al cliente que su pedido llega hoy.
-func mensajeEnRuta(e skydropx.CODShipment, cobro float64) string {
-	nombre := strings.TrimSpace(e.Customer)
-	if f := strings.Fields(nombre); len(f) > 0 {
-		nombre = " " + f[0]
+// inTransitMessage is the WhatsApp message telling the customer their order arrives today.
+func inTransitMessage(e skydropx.CODShipment, cod float64) string {
+	fullName := strings.TrimSpace(e.Customer)
+	if f := strings.Fields(fullName); len(f) > 0 {
+		fullName = " " + f[0]
 	}
-	msg := fmt.Sprintf("Hola%s 👋 Tu pedido va hoy en ruta de entrega con Interrapidísimo (guía %s).", nombre, e.Tracking)
-	if cobro > 0 {
-		msg += fmt.Sprintf(" Ten listos %s para pagar al recibir.", formatCOP(cobro))
+	msg := fmt.Sprintf("Hola%s 👋 Tu pedido va hoy en ruta de entrega con Interrapidísimo (guía %s).", fullName, e.Tracking)
+	if cod > 0 {
+		msg += fmt.Sprintf(" Ten listos %s para pagar al recibir.", formatCOP(cod))
 	}
 	return msg + " Si no vas a estar, avísanos por aquí. ¡Gracias!"
 }
 
-// enRutaTexto es el aviso al grupo de gestión de que un envío salió a reparto, con el enlace para
-// escribirle al cliente.
-func enRutaTexto(e skydropx.CODShipment, cobro float64, detalle string) string {
-	cliente := e.Customer
-	if cliente == "" {
-		cliente = "Sin nombre"
+// inTransitText is the notice to the ops group that a shipment went out for delivery, with the link to
+// message the customer.
+func inTransitText(e skydropx.CODShipment, cod float64, detail string) string {
+	cust := e.Customer
+	if cust == "" {
+		cust = "Sin nombre"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "🛵 <b>En ruta de entrega: llega hoy</b>\n\n👤 <b>Cliente:</b> %s\n", html.EscapeString(cliente))
+	fmt.Fprintf(&b, "🛵 <b>En ruta de entrega: llega hoy</b>\n\n👤 <b>Cliente:</b> %s\n", html.EscapeString(cust))
 	if e.Phone != "" {
 		fmt.Fprintf(&b, "📞 <b>Teléfono:</b> %s\n", html.EscapeString(e.Phone))
 	}
@@ -105,13 +105,13 @@ func enRutaTexto(e skydropx.CODShipment, cobro float64, detalle string) string {
 		fmt.Fprintf(&b, "📍 <b>Ciudad:</b> %s\n", html.EscapeString(e.City))
 	}
 	fmt.Fprintf(&b, "📦 <b>Guía:</b> %s\n", html.EscapeString(e.Tracking))
-	if cobro > 0 {
-		fmt.Fprintf(&b, "💵 <b>Cobra al entregar:</b> %s\n", formatCOP(cobro))
+	if cod > 0 {
+		fmt.Fprintf(&b, "💵 <b>Cobra al entregar:</b> %s\n", formatCOP(cod))
 	}
-	if d := strings.TrimSpace(detalle); d != "" {
+	if d := strings.TrimSpace(detail); d != "" {
 		fmt.Fprintf(&b, "📝 %s\n", html.EscapeString(d))
 	}
-	if link := waLink(e.Phone, mensajeEnRuta(e, cobro)); link != "" {
+	if link := waLink(e.Phone, inTransitMessage(e, cod)); link != "" {
 		fmt.Fprintf(&b, "\n👉 <a href=\"%s\">Avisarle al cliente por WhatsApp</a> (el mensaje va listo)\n", html.EscapeString(link))
 	} else {
 		b.WriteString("\nAvísale al cliente que esté pendiente y tenga el dinero listo.\n")
@@ -119,55 +119,55 @@ func enRutaTexto(e skydropx.CODShipment, cobro float64, detalle string) string {
 	return b.String()
 }
 
-// avisoEnRuta avisa en el grupo de gestión y en el grupo de guías del vendedor, una vez por día y envío,
-// que el paquete salió a reparto, para que cualquiera de los dos le avise al cliente.
-func (b *Bot) avisoEnRuta(shipmentID, tracking, detalle string) {
+// inTransitNotice tells the ops group and the seller's labels group, once per day and shipment,
+// that the package went out for delivery, so either of them can tell the customer.
+func (b *Bot) inTransitNotice(shipmentID, tracking, detail string) {
 	if shipmentID == "" && tracking == "" {
 		return
 	}
 	day := time.Now().In(colombiaTZ).Format("2006-01-02")
-	nuevo, err := b.st.marcarAviso(shipmentID+tracking+":last_mile:"+day, day)
+	fresh, err := b.st.markNotice(shipmentID+tracking+":last_mile:"+day, day)
 	if err != nil {
 		log.Printf("bot: no se pudo guardar el aviso de reparto: %v", err)
 	}
-	if !nuevo {
+	if !fresh {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	e, _, err := b.buscarEnvio(ctx, shipmentID, tracking)
+	e, _, err := b.findShipment(ctx, shipmentID, tracking)
 	if errors.Is(err, skydropx.ErrMockMode) {
 		return
 	}
 	if e.Tracking == "" {
 		e.Tracking = tracking
 	}
-	var cobro float64
+	var cod float64
 	if e.ID != "" {
-		cobro, _ = b.sky.CODAmounts(ctx, e)
+		cod, _ = b.sky.CODAmounts(ctx, e)
 	}
-	msg := enRutaTexto(e, cobro, detalle)
-	for _, id := range b.chatsEnRuta() {
+	msg := inTransitText(e, cod, detail)
+	for _, id := range b.inTransitChats() {
 		b.say(ctx, id, msg)
 	}
 }
 
-// chatsEnRuta son los grupos de gestión y de guías, sin repetir (si no hay grupo de gestión son el mismo).
-// Reciben los avisos en los que cualquiera de los dos puede contactar al cliente.
-func (b *Bot) chatsEnRuta() []int64 {
+// inTransitChats are the ops and labels groups, without repeats (if there is no ops group they are the same).
+// They receive the notices where either of them can contact the customer.
+func (b *Bot) inTransitChats() []int64 {
 	var out []int64
-	visto := map[int64]bool{}
-	for _, id := range append(append([]int64(nil), b.gestionChats()...), b.opts.AdminChatIDs...) {
-		if !visto[id] {
-			visto[id] = true
+	seen := map[int64]bool{}
+	for _, id := range append(append([]int64(nil), b.opsChats()...), b.opts.AdminChatIDs...) {
+		if !seen[id] {
+			seen[id] = true
 			out = append(out, id)
 		}
 	}
 	return out
 }
 
-// comandoGuia atiende /guia <número>: estado del envío, últimos eventos y cobro.
-func (b *Bot) comandoGuia(ctx context.Context, chatID int64, text string) {
+// labelCommand handles /guia <number>: shipment state, latest events and collection.
+func (b *Bot) labelCommand(ctx context.Context, chatID int64, text string) {
 	tracking := strings.TrimSpace(strings.TrimPrefix(text, "/guia"))
 	if f := strings.Fields(tracking); len(f) == 1 {
 		tracking = f[0]
@@ -177,7 +177,7 @@ func (b *Bot) comandoGuia(ctx context.Context, chatID int64, text string) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	e, ok, err := b.buscarEnvio(ctx, "", tracking)
+	e, ok, err := b.findShipment(ctx, "", tracking)
 	switch {
 	case errors.Is(err, skydropx.ErrMockMode):
 		b.say(ctx, chatID, "El bot no está conectado a Skydropx (modo de prueba).")
@@ -189,30 +189,30 @@ func (b *Bot) comandoGuia(ctx context.Context, chatID int64, text string) {
 		b.say(ctx, chatID, fmt.Sprintf("No encontré la guía <code>%s</code> en la cuenta. Revisa el número.", html.EscapeString(tracking)))
 		return
 	}
-	st, err := b.sky.Rastreo(ctx, e.Tracking, e.Carrier)
+	st, err := b.sky.TrackStatus(ctx, e.Tracking, e.Carrier)
 	if err != nil {
 		b.say(ctx, chatID, "No se pudo consultar el rastreo: "+err.Error())
 		return
 	}
-	var cobro float64
+	var cod float64
 	if e.Status == "pending" {
-		cobro, _ = b.sky.CODAmounts(ctx, e)
+		cod, _ = b.sky.CODAmounts(ctx, e)
 	}
-	b.say(ctx, chatID, guiaTexto(e, st, cobro))
+	b.say(ctx, chatID, labelText(e, st, cod))
 }
 
-// guiaTexto arma la respuesta de /guia.
-func guiaTexto(e skydropx.CODShipment, st skydropx.Status, cobro float64) string {
-	cliente := e.Customer
-	if cliente == "" {
-		cliente = "Sin nombre"
+// labelText builds the /guia answer.
+func labelText(e skydropx.CODShipment, st skydropx.Status, cod float64) string {
+	cust := e.Customer
+	if cust == "" {
+		cust = "Sin nombre"
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "📦 <b>Guía %s</b>", html.EscapeString(e.Tracking))
 	if e.Carrier != "" {
 		fmt.Fprintf(&b, " · %s", html.EscapeString(e.Carrier))
 	}
-	fmt.Fprintf(&b, "\n\n<b>%s</b>\n\n👤 %s", estadoGuia(st), html.EscapeString(cliente))
+	fmt.Fprintf(&b, "\n\n<b>%s</b>\n\n👤 %s", labelState(st), html.EscapeString(cust))
 	if e.Phone != "" {
 		fmt.Fprintf(&b, " · 📞 %s", html.EscapeString(e.Phone))
 	}
@@ -223,8 +223,8 @@ func guiaTexto(e skydropx.CODShipment, st skydropx.Status, cobro float64) string
 	case "collected":
 		b.WriteString("\n💵 Cobro: ✅ ya pagó")
 	case "pending":
-		if cobro > 0 {
-			fmt.Fprintf(&b, "\n💵 Cobro: por cobrar %s", formatCOP(cobro))
+		if cod > 0 {
+			fmt.Fprintf(&b, "\n💵 Cobro: por cobrar %s", formatCOP(cod))
 		} else {
 			b.WriteString("\n💵 Cobro: por cobrar")
 		}
@@ -240,11 +240,11 @@ func guiaTexto(e skydropx.CODShipment, st skydropx.Status, cobro float64) string
 			if desc == "" {
 				desc = ev.Status
 			}
-			fmt.Fprintf(&b, "\n   • %s — %s", diaHora(ev.Date.In(colombiaTZ)), html.EscapeString(desc))
+			fmt.Fprintf(&b, "\n   • %s — %s", dayTime(ev.Date.In(colombiaTZ)), html.EscapeString(desc))
 		}
 	}
 	if st.Raw == "last_mile" {
-		if link := waLink(e.Phone, mensajeEnRuta(e, cobro)); link != "" {
+		if link := waLink(e.Phone, inTransitMessage(e, cod)); link != "" {
 			fmt.Fprintf(&b, "\n\n👉 <a href=\"%s\">Avisarle al cliente por WhatsApp</a>", html.EscapeString(link))
 		}
 	}

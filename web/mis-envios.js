@@ -2,12 +2,12 @@
   const $ = (id) => document.getElementById(id);
 
   const SELLER_PHONE_KEY = "mis-envios-vendedor-telefono";
-  const DEFAULT_SELLER_PHONE = "3145319944"; // +57 314 531 9944 (el prefijo 57 lo agrega el enlace)
-  const TELEGRAM_CHAT_URL = "https://web.telegram.org/a/#5213739536"; // chat del vendedor en Telegram Web
+  const DEFAULT_SELLER_PHONE = "3145319944"; // +57 314 531 9944 (the link adds the 57 prefix)
+  const TELEGRAM_CHAT_URL = "https://web.telegram.org/a/#5213739536"; // seller's chat in Telegram Web
   const PAGE_SIZE = 10;
   const TZ = "America/Bogota";
 
-  // Página de seguimiento por transportadora (si Skydropx no la envía en el paquete).
+  // Tracking page per carrier (if Skydropx doesn't send it in the package).
   const CARRIER_TRACKING = {
     interrapidisimo: "https://siguetuenvio.interrapidisimo.com/",
     servientrega: "https://www.servientrega.com/wps/portal",
@@ -15,7 +15,7 @@
     coordinadora: "https://coordinadora.com/",
   };
 
-  // Formato de WhatsApp: *negrita*, saltos de línea y emojis.
+  // WhatsApp format: *bold*, line breaks and emojis.
   const TEMPLATE =
     "✅ *Envío creado con éxito*\n\n" +
     "📦 *Guía:* {guia}\n" +
@@ -36,7 +36,7 @@
     cancelled: { label: "Cancelado", cls: "bg-red-100 text-red-700" },
   };
 
-  // Nombres legibles de las transportadoras que devuelve Skydropx.
+  // Readable names of the carriers Skydropx returns.
   const CARRIER_NAMES = {
     interrapidisimo: "Interrapidísimo",
     servientrega: "Servientrega",
@@ -53,7 +53,7 @@
   }
 
   const state = {
-    qty: {}, // cantidad de artículos por ID de orden
+    qty: {}, // item count per order ID
     qtyRequested: new Set(),
     items: [],
     included: [],
@@ -65,11 +65,11 @@
     selectedId: null,
     status: {},
     statusLoaded: false,
-    estado: "",
-    cobro: "",
+    statusFilter: "",
+    codFilter: "",
   };
 
-  // ---------- Utilidades ----------
+  // ---------- Utilities ----------
 
   function todayBogota() {
     return new Date().toLocaleDateString("en-CA", { timeZone: TZ });
@@ -130,11 +130,11 @@
     return (pkg && pkg.attributes) || {};
   }
 
-  function destinoOf(to) {
+  function destinationOf(to) {
     return [to.area_level2, to.area_level1].filter(Boolean).join(", ");
   }
 
-  const ESTADO = {
+  const STATES = {
     en_camino: { label: "En camino", cls: "bg-sky-100 text-sky-700" },
     entregado: { label: "Entregado", cls: "bg-emerald-100 text-emerald-700" },
     intento_entrega: { label: "Intento de entrega", cls: "bg-orange-100 text-orange-700" },
@@ -145,7 +145,7 @@
     sin_estado: { label: "Sin rastreo", cls: "bg-slate-100 text-slate-500" },
   };
 
-  const COBRO = {
+  const COD_STATES = {
     cobrado: { label: "Cobrado", cls: "bg-teal-100 text-teal-700" },
     por_cobrar: { label: "Por cobrar", cls: "bg-amber-100 text-amber-800" },
   };
@@ -154,26 +154,26 @@
     return state.status[s.id];
   }
 
-  // Cobro para el mensaje: usa el rastreo si ya cargó; si no, el estado contra entrega del propio envío.
-  function cobroTexto(s) {
+  // Collection for the message: uses tracking if it has loaded; otherwise, the shipment's own cash-on-delivery state.
+  function codText(s) {
     const st = statusOf(s);
     if (st?.cobro === "no_aplica" && st.key === "cancelado") return "No aplica (envío cancelado)";
-    const key = COBRO[st?.cobro] ? st.cobro : { collected: "cobrado", pending: "por_cobrar" }[s.attributes?.on_delivery_status];
+    const key = COD_STATES[st?.cobro] ? st.cobro : { collected: "cobrado", pending: "por_cobrar" }[s.attributes?.on_delivery_status];
     if (key === "cobrado") return "Cobrado (pago contra entrega)";
     if (key === "por_cobrar") return "Por cobrar (pago contra entrega)";
     return "No aplica";
   }
 
-  // Estado logístico + cobro. Muestra un placeholder mientras llega el rastreo.
-  function estadoCell(s) {
+  // Logistics state + collection. Shows a placeholder while tracking arrives.
+  function statusCell(s) {
     const st = statusOf(s);
     if (!st) {
       return state.statusLoaded
         ? `<span class="text-slate-400">—</span>`
         : `<span class="skeleton inline-block h-5 w-24 rounded-full"></span>`;
     }
-    const e = ESTADO[st.key] || { label: st.label || "—", cls: "bg-slate-100 text-slate-700" };
-    const c = COBRO[st.cobro];
+    const e = STATES[st.key] || { label: st.label || "—", cls: "bg-slate-100 text-slate-700" };
+    const c = COD_STATES[st.cobro];
     return `<div class="flex flex-col items-start gap-1.5"><span class="badge ${e.cls}">${escapeHtml(e.label)}</span>${c ? `<span class="badge ${c.cls}">${escapeHtml(c.label)}</span>` : ""}</div>`;
   }
 
@@ -185,15 +185,15 @@
     return msg;
   }
 
-  // ---------- Filtros y datos visibles ----------
+  // ---------- Filters and visible data ----------
 
   function filtered() {
     let list = state.items;
     if (state.filter === "today") list = list.filter((s) => dayOf(s.attributes.created_at) === todayBogota());
     if (state.filter === "yesterday") list = list.filter((s) => dayOf(s.attributes.created_at) === yesterdayBogota());
     if (state.filter === "date" && state.day) list = list.filter((s) => dayOf(s.attributes.created_at) === state.day);
-    if (state.estado) list = list.filter((s) => statusOf(s)?.key === state.estado);
-    if (state.cobro) list = list.filter((s) => statusOf(s)?.cobro === state.cobro);
+    if (state.statusFilter) list = list.filter((s) => statusOf(s)?.key === state.statusFilter);
+    if (state.codFilter) list = list.filter((s) => statusOf(s)?.cobro === state.codFilter);
 
     const q = state.search.trim().toLowerCase();
     if (q) {
@@ -210,7 +210,7 @@
     return list;
   }
 
-  // ---------- Carga ----------
+  // ---------- Loading ----------
 
   async function loadShipments() {
     state.loaded = false;
@@ -221,8 +221,8 @@
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "No se pudieron cargar los envíos");
       state.included = body.included || [];
-      // Los envíos sin guía son intentos fallidos que nunca se generaron; solo se muestran los recién
-      // creados (menos de 30 minutos), que pueden estar esperando el número de guía.
+      // Shipments without a label are failed attempts that were never generated; only the freshly
+      // created ones (under 30 minutes) are shown, since they may be waiting for the tracking number.
       const recent = Date.now() - 30 * 60 * 1000;
       state.items = (body.data || []).filter(
         (s) => s.attributes.master_tracking_number || new Date(s.attributes.created_at) > recent
@@ -278,7 +278,7 @@
     loadQuantities(pageItems);
   }
 
-  // Cantidad de artículos: Skydropx la guarda en la orden, así que se consulta solo para la página visible.
+  // Item count: Skydropx keeps it in the order, so it's only looked up for the visible page.
   async function loadQuantities(items) {
     const ids = items
       .map((s) => s.attributes?.order_id)
@@ -294,7 +294,7 @@
       console.warn("Cantidad de artículos:", err.message);
     }
     ids.forEach((id) => {
-      if (!(id in state.qty)) state.qty[id] = null; // sin dato: se muestra "—"
+      if (!(id in state.qty)) state.qty[id] = null; // no data: shows "—"
     });
     render();
   }
@@ -348,7 +348,7 @@
       .map((s) => {
         const a = s.attributes || {};
         const to = recipientOf(s);
-        const guia = a.master_tracking_number
+        const trackingNo = a.master_tracking_number
           ? `<span class="font-mono text-slate-800">${escapeHtml(a.master_tracking_number)}</span>`
           : `<span class="text-slate-400">Sin guía</span>`;
         return `
@@ -357,11 +357,11 @@
               <div class="font-medium text-slate-800">${escapeHtml(dayLabel(a.created_at))}</div>
               <div class="text-xs text-slate-400">${escapeHtml(timeOf(a.created_at))}</div>
             </td>
-            <td class="whitespace-nowrap px-5 py-3.5">${guia}</td>
+            <td class="whitespace-nowrap px-5 py-3.5">${trackingNo}</td>
             <td class="px-5 py-3.5 font-medium text-slate-800">${escapeHtml(to.name || "—")}</td>
-            <td class="px-5 py-3.5 text-slate-500">${escapeHtml(destinoOf(to) || "—")}</td>
+            <td class="px-5 py-3.5 text-slate-500">${escapeHtml(destinationOf(to) || "—")}</td>
             <td class="px-5 py-3.5 text-center">${qtyCell(s)}</td>
-            <td class="px-5 py-3.5">${estadoCell(s)}</td>
+            <td class="px-5 py-3.5">${statusCell(s)}</td>
             <td class="whitespace-nowrap px-5 py-3.5 text-right">
               <button type="button" data-action="pdf" data-id="${s.id}" class="btn-ghost !px-3 !py-1.5 text-xs">PDF</button>
               <button type="button" data-action="msg" data-id="${s.id}" class="btn-primary ml-2 !px-3 !py-1.5 text-xs">Mensaje</button>
@@ -388,9 +388,9 @@
               <div class="min-w-0">
                 <p class="font-mono text-sm font-semibold text-slate-900">${a.master_tracking_number ? escapeHtml(a.master_tracking_number) : "Sin guía"}</p>
                 <p class="mt-0.5 truncate text-sm text-slate-600">${escapeHtml(to.name || "—")}</p>
-                <p class="mt-0.5 text-xs text-slate-400">${escapeHtml(destinoOf(to) || "—")} · ${escapeHtml(dayLabel(a.created_at))} ${escapeHtml(timeOf(a.created_at))}${qtyText(s) ? ` · ${escapeHtml(qtyText(s))}` : ""}</p>
+                <p class="mt-0.5 text-xs text-slate-400">${escapeHtml(destinationOf(to) || "—")} · ${escapeHtml(dayLabel(a.created_at))} ${escapeHtml(timeOf(a.created_at))}${qtyText(s) ? ` · ${escapeHtml(qtyText(s))}` : ""}</p>
               </div>
-              ${estadoCell(s)}
+              ${statusCell(s)}
             </div>
             <div class="mt-4 grid grid-cols-2 gap-2">
               <button type="button" data-action="pdf" data-id="${s.id}" class="btn-ghost !py-2 text-sm">PDF</button>
@@ -443,7 +443,7 @@
     }
   }
 
-  // ---------- Panel de mensaje ----------
+  // ---------- Message panel ----------
 
   function openDrawer(shipment) {
     state.selectedId = shipment.id;
@@ -454,11 +454,11 @@
     const data = {
       guia: a.master_tracking_number || "pendiente",
       nombre: to.name || "",
-      destino: destinoOf(to),
+      destino: destinationOf(to),
       transportadora: [carrierName(a.carrier_name), a.service_name].filter(Boolean).join(" - ") || "Interrapidísimo",
       seguimiento: pkg.tracking_url_provider || CARRIER_TRACKING[carrierKey(a.carrier_name)] || "pendiente",
-      estado: (statusOf(shipment) && (ESTADO[statusOf(shipment).key]?.label || statusOf(shipment).label)) || "pendiente de rastreo",
-      cobro: cobroTexto(shipment),
+      estado: (statusOf(shipment) && (STATES[statusOf(shipment).key]?.label || statusOf(shipment).label)) || "pendiente de rastreo",
+      cobro: codText(shipment),
       pdf: pkg.label_url || "pendiente (la guía aún no está disponible)",
     };
 
@@ -466,8 +466,8 @@
     $("od-info").textContent = `${data.nombre || "Sin nombre"} · ${data.destino || "Sin destino"} · ${dayLabel(a.created_at)} ${timeOf(a.created_at)}`;
 
     const st = statusOf(shipment);
-    const e = st && (ESTADO[st.key] || { label: st.label, cls: "bg-slate-100 text-slate-700" });
-    const c = st && COBRO[st.cobro];
+    const e = st && (STATES[st.key] || { label: st.label, cls: "bg-slate-100 text-slate-700" });
+    const c = st && COD_STATES[st.cobro];
     $("od-status").innerHTML = st
       ? `<div class="flex flex-wrap items-center gap-2">${e ? `<span class="badge ${e.cls}">${escapeHtml(e.label)}</span>` : ""}${c ? `<span class="badge ${c.cls}">${escapeHtml(c.label)}</span>` : ""}</div>` +
         (st.last_event
@@ -517,7 +517,7 @@
     if (!ready) return;
 
     const number = phone.length === 10 ? `57${phone}` : phone;
-    // wa.me abre WhatsApp Web en el computador y la app en el celular.
+    // wa.me opens WhatsApp Web on a computer and the app on a phone.
     wa.href = `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
     tg.href = TELEGRAM_CHAT_URL;
   }
@@ -539,7 +539,7 @@
     }
   }
 
-  // ---------- Vistas ----------
+  // ---------- Views ----------
 
   function showView(name) {
     ["crear", "envios", "finanzas"].forEach((v) => {
@@ -547,12 +547,12 @@
       $(`tab-${v}`).setAttribute("aria-selected", String(v === name));
     });
     if (name === "envios" && !state.loaded) loadShipments();
-    if (name === "finanzas" && window.finanzas) window.finanzas.show();
+    if (name === "finanzas" && window.finance) window.finance.show();
     history.replaceState(null, "", name === "crear" ? location.pathname : `#${name}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // ---------- Eventos ----------
+  // ---------- Events ----------
 
   $("tab-crear").addEventListener("click", () => showView("crear"));
   $("tab-envios").addEventListener("click", () => showView("envios"));
@@ -579,12 +579,12 @@
     render();
   });
   $("filter-estado").addEventListener("change", (e) => {
-    state.estado = e.target.value;
+    state.statusFilter = e.target.value;
     state.page = 1;
     render();
   });
   $("filter-cobro").addEventListener("change", (e) => {
-    state.cobro = e.target.value;
+    state.codFilter = e.target.value;
     state.page = 1;
     render();
   });
@@ -610,7 +610,7 @@
     render();
   });
 
-  // Acciones de tabla y tarjetas (delegación)
+  // Table and card actions (delegation)
   document.addEventListener("click", (e) => {
     const target = e.target.closest("[data-action]");
     if (!target) return;
@@ -638,13 +638,13 @@
     window.toast("Mensaje copiado. Pégalo en el chat de Telegram.", "info");
   });
 
-  // Estado inicial: fecha de hoy en el selector.
+  // Initial state: today's date in the picker.
   $("filter-day").max = todayBogota();
   render();
   renderLoading();
-  // La pestaña se recuerda en la dirección (#envios, #finanzas) para poder volver directo.
+  // The tab is remembered in the URL (#envios, #finanzas) so you can come straight back.
   const initial = location.hash.slice(1);
   document.addEventListener("DOMContentLoaded", () => showView(["envios", "finanzas"].includes(initial) ? initial : "crear"));
-  // Carga anticipada para que la pestaña abra con datos
+  // Preload so the tab opens with data
   loadShipments();
 })();

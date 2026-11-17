@@ -12,22 +12,22 @@ import (
 	"skydropx-automator/internal/config"
 )
 
-func TestClaves(t *testing.T) {
-	if ClaveTelefono("+57 300-123-4567") != "3001234567" || ClaveTelefono("12") != "" {
+func TestKeys(t *testing.T) {
+	if PhoneKey("+57 300-123-4567") != "3001234567" || PhoneKey("12") != "" {
 		t.Error("ClaveTelefono")
 	}
-	if ClaveDocumento("1.234.567.890") != "1234567890" || ClaveDocumento("12") != "" {
+	if DocumentKey("1.234.567.890") != "1234567890" || DocumentKey("12") != "" {
 		t.Error("ClaveDocumento")
 	}
 }
 
-func TestHistorialCliente(t *testing.T) {
+func TestCustomerHistory(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"access_token":"tok","expires_in":7200}`)
 	})
-	// Ana (cédula 111, tel 3001112233): una devolución, una entrega que esperó 5 días en oficina y una que
-	// esperó 1 día. Otra persona usa su teléfono. Un tercero no tiene nada que ver.
+	// Ana (document 111, phone 3001112233): a return, a delivery that waited 5 days at the office and one that
+	// waited 1 day. Someone else uses her phone. A third person is unrelated.
 	mux.HandleFunc("GET /api/v1/shipments", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"data":[
 			{"id":"s1","attributes":{"created_at":"2026-11-01T10:00:00-05:00","master_tracking_number":"G1","carrier_name":"inter","on_delivery_status":"failed"},"relationships":{"address_to":{"data":{"id":"a1"}}}},
@@ -59,25 +59,25 @@ func TestHistorialCliente(t *testing.T) {
 	defer srv.Close()
 	c := NewClient(config.Config{SkydropxMode: "live", SkydropxBaseURL: srv.URL, SkydropxClientID: "id", SkydropxClientSecret: "s"})
 
-	// Por cédula: los 3 de Ana; el del primo (otra cédula, mismo teléfono) también entra por teléfono.
-	malos, total, err := c.HistorialCliente(context.Background(), "111.111", "3001112233", 3)
+	// By document: Ana's 3; the cousin's (another document, same phone) also matches by phone.
+	badOnes, total, err := c.CustomerHistory(context.Background(), "111.111", "3001112233", 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if total != 4 {
 		t.Errorf("total = %d, se esperaban 4 envíos (3 de Ana y 1 con su teléfono)", total)
 	}
-	if len(malos) != 2 || malos[0].Tipo != "no_pago" || malos[0].Tracking != "G1" ||
-		malos[1].Tipo != "oficina" || malos[1].Tracking != "G2" || malos[1].DiasEnOficina != 5 {
-		t.Fatalf("antecedentes = %+v", malos)
+	if len(badOnes) != 2 || badOnes[0].Kind != "no_pago" || badOnes[0].Tracking != "G1" ||
+		badOnes[1].Kind != "oficina" || badOnes[1].Tracking != "G2" || badOnes[1].DaysAtOffice != 5 {
+		t.Fatalf("antecedentes = %+v", badOnes)
 	}
-	// Solo con otro teléfono y la cédula: encuentra lo de Ana por cédula.
-	if malos, _, _ := c.HistorialCliente(context.Background(), "111111", "3200000000", 3); len(malos) != 2 {
-		t.Errorf("por cédula: %+v", malos)
+	// Only with another phone and the document: finds Ana's by document.
+	if badOnes, _, _ := c.CustomerHistory(context.Background(), "111111", "3200000000", 3); len(badOnes) != 2 {
+		t.Errorf("por cédula: %+v", badOnes)
 	}
-	// Alguien sin historial.
-	if malos, total, _ := c.HistorialCliente(context.Background(), "999999", "3150000000", 3); len(malos) != 0 || total != 0 {
-		t.Errorf("sin historial: %+v %d", malos, total)
+	// Someone without history.
+	if badOnes, total, _ := c.CustomerHistory(context.Background(), "999999", "3150000000", 3); len(badOnes) != 0 || total != 0 {
+		t.Errorf("sin historial: %+v %d", badOnes, total)
 	}
 }
 

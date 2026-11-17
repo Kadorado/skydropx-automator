@@ -8,9 +8,9 @@
   const CHECK_SVG = '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17 19 7"/></svg>';
   const SPINNER = '<span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>';
 
-  // ---------- Utilidades de UI ----------
+  // ---------- UI utilities ----------
 
-  // Notificación flotante (la usan ambas vistas).
+  // Floating notification (used by both views).
   window.toast = function toast(message, type = "success") {
     const root = $("toast-root");
     const colors = {
@@ -45,7 +45,7 @@
     el.classList.add("hidden");
   }
 
-  // Caja de cobertura con estilo según el resultado.
+  // Coverage box styled according to the result.
   const coverageBox = $("coverage-status");
   const COVERAGE_STYLES = {
     loading: "border-slate-200 bg-slate-50 text-slate-600",
@@ -57,7 +57,7 @@
     coverageBox.innerHTML = html;
   }
 
-  // Indicador de pasos: marca el paso actual y mueve la barra de progreso.
+  // Step indicator: marks the current step and moves the progress bar.
   function setStepper(num) {
     [1, 2, 3].forEach((n) => {
       const state = n < num ? "done" : n === num ? "current" : "todo";
@@ -74,7 +74,7 @@
       screens[k].classList.toggle("hidden", !on);
       if (on) {
         screens[k].classList.remove("step-enter");
-        void screens[k].offsetWidth; // reinicia la animación
+        void screens[k].offsetWidth; // restarts the animation
         screens[k].classList.add("step-enter");
       }
     });
@@ -114,7 +114,7 @@
     });
   }
 
-  // ---------- Estado del servidor ----------
+  // ---------- Server status ----------
 
   fetch("/api/health")
     .then((r) => r.json())
@@ -126,7 +126,7 @@
       $("system-badge").textContent = "Sin conexión con el backend";
     });
 
-  // ---------- Paso 1: pegar y procesar ----------
+  // ---------- Step 1: paste and process ----------
 
   $("btn-load-sample").addEventListener("click", () => {
     $("raw-message").value = `¡Gracias Yeison! Ya quedó todo anotado 🫡
@@ -199,7 +199,7 @@ SERVICIO TÉCNICO ISTMINA`;
     coverageBox.classList.add("hidden");
 
     const notes = [];
-    // El valor unitario siempre tiene un valor por defecto en el formulario; no es un dato faltante del mensaje.
+    // The unit price always has a default value in the form; it isn't missing data from the message.
     const missing = (parsed.missing_fields || []).filter((f) => !f.startsWith("valor_unitario"));
     if (missing.length > 0) {
       notes.push(`Revisa estos campos: ${missing.join(", ")}.`);
@@ -214,11 +214,11 @@ SERVICIO TÉCNICO ISTMINA`;
     else hideBox($("alert-missing"));
   }
 
-  // ---------- Paso 2: revisar, validar y confirmar ----------
+  // ---------- Step 2: review, validate and confirm ----------
 
   $("btn-back").addEventListener("click", () => showScreen(1));
 
-  // Validación de cobertura en vivo: cotiza la ruta en Skydropx sin crear nada.
+  // Live coverage validation: quotes the route in Skydropx without creating anything.
   $("btn-validate-address").addEventListener("click", async () => {
     const btn = $("btn-validate-address");
     const idle = btn.innerHTML;
@@ -289,7 +289,7 @@ SERVICIO TÉCNICO ISTMINA`;
     }
   });
 
-  // ---------- Paso 3: resultado ----------
+  // ---------- Step 3: result ----------
 
   function showSuccessResult(res) {
     $("result-success").classList.remove("hidden");

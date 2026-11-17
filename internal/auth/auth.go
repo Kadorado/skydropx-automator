@@ -1,7 +1,5 @@
-// Package auth protege la app con una contraseña única (variable APP_PASSWORD).
-// Si APP_PASSWORD no está configurada, la app no pide inicio de sesión (uso local).
-// Package auth protege la app con una contraseña única (variable APP_PASSff   WORD).
-// Si APP_PASSWORD no está configurada, la app nffo pide inicio de sesi  ósssn (uso local).
+// Package auth protects the app with a single password (APP_PASSWORD variable).
+// If APP_PASSWORD isn't set, the app doesn't ask for login (local use).
 package auth
 
 import (
@@ -15,13 +13,13 @@ import (
 	"time"
 )
 
-// WebhookPath es la ruta donde Skydropx envía sus eventos.
+// WebhookPath is the path where Skydropx sends its events.
 const WebhookPath = "/api/webhooks/skydropx"
 
 const (
 	cookieName = "sd_session"
 	sessionTTL = 12 * time.Hour
-	loginDelay = 700 * time.Millisecond // frena intentos de adivinar la contraseña
+	loginDelay = 700 * time.Millisecond // slows down password guessing
 )
 
 type Guard struct {
@@ -45,7 +43,7 @@ func (g *Guard) newSession() (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	now := time.Now()
-	for k, exp := range g.sessions { // limpia sesiones vencidas
+	for k, exp := range g.sessions { // clean up expired sessions
 		if now.After(exp) {
 			delete(g.sessions, k)
 		}
@@ -85,10 +83,10 @@ func (g *Guard) setCookie(w http.ResponseWriter, r *http.Request, value string, 
 	})
 }
 
-// Wrap exige sesión para todo excepto /login, /logout y el webhook de Skydropx.
+// Wrap requires a session for everything except /login, /logout and the Skydropx webhook.
 func (g *Guard) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// El webhook de Skydropx no tiene sesión: se valida con su propia firma en el handler.
+		// The Skydropx webhook has no session: it is validated with its own signature in the handler.
 		if !g.Enabled() || r.URL.Path == "/login" || r.URL.Path == "/logout" || r.URL.Path == WebhookPath || g.isAuthenticated(r) {
 			next.ServeHTTP(w, r)
 			return
@@ -103,7 +101,7 @@ func (g *Guard) Wrap(next http.Handler) http.Handler {
 	})
 }
 
-// LoginPage muestra el formulario (GET) o valida la contraseña (POST).
+// LoginPage shows the form (GET) or checks the password (POST).
 func (g *Guard) LoginPage(w http.ResponseWriter, r *http.Request) {
 	if !g.Enabled() {
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -138,7 +136,7 @@ func (g *Guard) LoginPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(loginHTML(errorBox)))
 }
 
-// Logout cierra la sesión actual.
+// Logout ends the current session.
 func (g *Guard) Logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(cookieName); err == nil {
 		g.mu.Lock()

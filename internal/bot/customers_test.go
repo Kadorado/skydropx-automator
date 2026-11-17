@@ -17,10 +17,10 @@ func TestCustomerListFromOrders(t *testing.T) {
 	store := customers.NewMemoryStore()
 	b.opts.Customers = store
 
-	data := domain.ShipmentData{Nombre: "Ana Pérez", Documento: "1.111.111", Telefono: "300 111 2233", Ciudad: "Montería",
-		Departamento: "Córdoba", Cantidad: 2, ValorUnitario: 60000, AutorizaDatos: "si", Fuente: "facebook"}
+	data := domain.ShipmentData{Name: "Ana Pérez", Document: "1.111.111", Phone: "300 111 2233", City: "Montería",
+		Department: "Córdoba", Quantity: 2, UnitPrice: 60000, DataConsent: "si", Source: "facebook"}
 	b.recordCustomer(ctx, data, "orden-1", "Vendedor")
-	b.recordCustomer(ctx, domain.ShipmentData{Nombre: "Luis", Telefono: "3105556677", Ciudad: "Sincelejo"}, "orden-2", "Vendedor")
+	b.recordCustomer(ctx, domain.ShipmentData{Name: "Luis", Phone: "3105556677", City: "Sincelejo"}, "orden-2", "Vendedor")
 
 	ana, err := store.Find(ctx, "1111111")
 	if err != nil || !ana.Contactable() || ana.Consent.RecordedBy != "Vendedor" || len(ana.Orders) != 1 ||
@@ -29,10 +29,10 @@ func TestCustomerListFromOrders(t *testing.T) {
 	}
 
 	b.customersCommand(ctx, -100, "/clientes")
-	resumen := f.messages[len(f.messages)-1]
+	summary := f.messages[len(f.messages)-1]
 	for _, want := range []string{"BASE DE CLIENTES", "Clientes: <b>2</b>", "Autorizaron publicidad: <b>1</b>", "Sin autorización: 1", "Montería: 1", "facebook: 1", "Sin indicar: 1"} {
-		if !strings.Contains(resumen, want) {
-			t.Errorf("falta %q en:\n%s", want, resumen)
+		if !strings.Contains(summary, want) {
+			t.Errorf("falta %q en:\n%s", want, summary)
 		}
 	}
 	if !strings.Contains(string(f.document), "Ana Pérez,1111111,3001112233") || !strings.Contains(f.caption, "Base de clientes") {
@@ -78,7 +78,7 @@ func TestMigrationText(t *testing.T) {
 func TestUnsavedCustomerIsReportedAndRetried(t *testing.T) {
 	b, f := newTestBot(t)
 	ctx := context.Background()
-	b.opts.GestionChatIDs = []int64{-100}
+	b.opts.OpsChatIDs = []int64{-100}
 	// MONGODB_URI was set but MongoDB didn't connect at startup.
 	b.opts.CustomersError = "server selection error: mongodb+srv://user:secret@cluster0.x.mongodb.net tls: internal error"
 
@@ -88,7 +88,7 @@ func TestUnsavedCustomerIsReportedAndRetried(t *testing.T) {
 		t.Fatalf("startup notice (without the password): %s", last)
 	}
 
-	data := domain.ShipmentData{Nombre: "Ana Pérez", Telefono: "3001112233", Ciudad: "Montería", Cantidad: 1, AutorizaDatos: "si"}
+	data := domain.ShipmentData{Name: "Ana Pérez", Phone: "3001112233", City: "Montería", Quantity: 1, DataConsent: "si"}
 	b.recordCustomer(ctx, data, "orden-1", "Vendedor")
 	notice := f.messages[len(f.messages)-1]
 	for _, want := range []string{"No se guardó el cliente", "Ana Pérez", "no se conectó cuando arrancó", "Reintentar", "no se pierde"} {
@@ -132,9 +132,9 @@ func TestUnsavedCustomerIsReportedAndRetried(t *testing.T) {
 func TestUnsavedCustomersAreSavedAtStartup(t *testing.T) {
 	b, f := newTestBot(t)
 	ctx := context.Background()
-	b.opts.GestionChatIDs = []int64{-100}
+	b.opts.OpsChatIDs = []int64{-100}
 	for _, id := range []string{"o1", "o2"} {
-		_ = b.st.addUnsaved(UnsavedCustomer{OrderID: id, Data: domain.ShipmentData{Nombre: id, Telefono: "300000000" + id[1:]}, At: time.Now()})
+		_ = b.st.addUnsaved(UnsavedCustomer{OrderID: id, Data: domain.ShipmentData{Name: id, Phone: "300000000" + id[1:]}, At: time.Now()})
 	}
 	b.opts.Customers = customers.NewMemoryStore()
 	b.customersAtStartup(ctx)
@@ -153,9 +153,9 @@ func TestUnsavedCustomersAreSavedAtStartup(t *testing.T) {
 
 func TestCustomerListNotConfiguredIsSilent(t *testing.T) {
 	b, f := newTestBot(t)
-	b.opts.GestionChatIDs = []int64{-100}
+	b.opts.OpsChatIDs = []int64{-100}
 	b.customersAtStartup(context.Background())
-	b.recordCustomer(context.Background(), domain.ShipmentData{Nombre: "Ana", Telefono: "3001112233"}, "o1", "V")
+	b.recordCustomer(context.Background(), domain.ShipmentData{Name: "Ana", Phone: "3001112233"}, "o1", "V")
 	if len(f.messages) != 0 || len(b.st.snapshotUnsaved()) != 0 {
 		t.Fatalf("without MONGODB_URI nothing is said nor kept: %v", f.messages)
 	}
@@ -164,11 +164,11 @@ func TestCustomerListNotConfiguredIsSilent(t *testing.T) {
 func TestBackupAndRestore(t *testing.T) {
 	b, f := newTestBot(t)
 	ctx := context.Background()
-	b.opts.GestionChatIDs = []int64{-100}
+	b.opts.OpsChatIDs = []int64{-100}
 	store := customers.NewMemoryStore()
 	b.opts.Customers = store
-	b.recordCustomer(ctx, domain.ShipmentData{Nombre: "Ana Pérez", Documento: "111111", Telefono: "3001112233", Cantidad: 2, AutorizaDatos: "si"}, "o1", "V")
-	b.recordCustomer(ctx, domain.ShipmentData{Nombre: "Luis", Telefono: "3105556677"}, "o2", "V")
+	b.recordCustomer(ctx, domain.ShipmentData{Name: "Ana Pérez", Document: "111111", Phone: "3001112233", Quantity: 2, DataConsent: "si"}, "o1", "V")
+	b.recordCustomer(ctx, domain.ShipmentData{Name: "Luis", Phone: "3105556677"}, "o2", "V")
 
 	b.customersCommand(ctx, -100, "/clientes respaldo")
 	if !strings.Contains(f.caption, "2 clientes · 📦 2 pedidos") || !strings.Contains(f.caption, "/clientes restaurar") {
@@ -199,7 +199,7 @@ func TestBackupAndRestore(t *testing.T) {
 	if last := f.messages[len(f.messages)-1]; !strings.Contains(last, "no es un respaldo de clientes") {
 		t.Fatalf("wrong file: %s", last)
 	}
-	// Outside the gestión group it does nothing.
+	// Outside the ops group it does nothing.
 	other := *reply
 	other.Chat.ID = -200
 	b.restoreCommand(ctx, &other)
@@ -231,7 +231,7 @@ func TestIsRestoreCommand(t *testing.T) {
 func TestWeeklyBackup(t *testing.T) {
 	b, f := newTestBot(t)
 	ctx := context.Background()
-	b.opts.GestionChatIDs = []int64{-100}
+	b.opts.OpsChatIDs = []int64{-100}
 	b.opts.Customers = customers.NewMemoryStore()
 	monday := time.Date(2026, 11, 16, 6, 0, 0, 0, colombiaTZ)
 	b.backupIfDue(ctx, monday)                                   // too early
@@ -251,7 +251,7 @@ func TestWeeklyBackup(t *testing.T) {
 }
 
 func TestHelpTextsFitTelegram(t *testing.T) {
-	for name, txt := range map[string]string{"gestion": ayudaGestion, "vendedor": ayudaVendedor, "guias": ayudaGrupoGuias} {
+	for name, txt := range map[string]string{"gestion": helpOps, "vendedor": helpSeller, "guias": helpLabelsGroup} {
 		if n := len([]rune(txt)); n > 4096 {
 			t.Errorf("%s: %d characters, Telegram allows 4096", name, n)
 		}

@@ -1,5 +1,5 @@
-// Package settings guarda los ajustes que se cambian desde la app o el bot (sin tocar variables de entorno),
-// como la comisión del vendedor por datáfono.
+// Package settings stores the settings changed from the app or the bot (without touching environment variables),
+// such as the seller's per-terminal commission.
 package settings
 
 import (
@@ -14,33 +14,33 @@ import (
 
 var colombia = time.FixedZone("COT", -5*3600)
 
-// CommissionRate es lo que se le paga al vendedor por datáfono desde una fecha (AAAA-MM-DD, hora de Colombia).
+// CommissionRate is what the seller is paid per terminal from a date (YYYY-MM-DD, Colombia time).
 type CommissionRate struct {
 	From  string  `json:"from"`
 	Value float64 `json:"value"`
 }
 
-// VendorPayment es un pago de comisión al vendedor. Cubre los envíos ya cobrados que se marcaron al
-// registrarlo; la diferencia entre lo pagado y lo que cubre queda como saldo.
+// VendorPayment is a commission payment to the seller. It covers the already collected shipments marked when
+// it was recorded; the difference between what was paid and what it covers stays as balance.
 type VendorPayment struct {
-	Date      string   `json:"date"`              // día en que se registró el pago (AAAA-MM-DD)
-	Amount    float64  `json:"amount"`            // lo que se le pagó
-	Covered   float64  `json:"covered"`           // comisión de los envíos que cubre
-	Units     int      `json:"units"`             // datáfonos de esos envíos
-	Through   string   `json:"through,omitempty"` // cubre guías creadas hasta este día (vacío = todas las cobradas)
-	Trackings []string `json:"trackings"`         // guías que cubre
+	Date      string   `json:"date"`              // day the payment was recorded (YYYY-MM-DD)
+	Amount    float64  `json:"amount"`            // what was paid
+	Covered   float64  `json:"covered"`           // commission of the shipments it covers
+	Units     int      `json:"units"`             // terminals of those shipments
+	Through   string   `json:"through,omitempty"` // covers labels created up to this day (empty = all collected)
+	Trackings []string `json:"trackings"`         // labels it covers
 }
 
-// AdExpense es un gasto de publicidad que se reparte mitad y mitad con el vendedor.
+// AdExpense is an ad expense split half and half with the seller.
 type AdExpense struct {
-	Date   string  `json:"date"`           // día del gasto (AAAA-MM-DD)
-	Amount float64 `json:"amount"`         // lo que costó en total
-	PaidBy string  `json:"paid_by"`        // "yo" (el dueño: el vendedor debe la mitad) o "vendedor" (se le debe la mitad)
-	Note   string  `json:"note,omitempty"` // para qué fue (Facebook, TikTok…)
+	Date   string  `json:"date"`           // day of the expense (YYYY-MM-DD)
+	Amount float64 `json:"amount"`         // what it cost in total
+	PaidBy string  `json:"paid_by"`        // "yo" (the owner: the seller owes half) or "vendedor" (half is owed to them)
+	Note   string  `json:"note,omitempty"` // what it was for (Facebook, TikTok…)
 }
 
-// VendorShare es lo que la publicidad le suma a lo que se le debe al vendedor: +la mitad si la pagó él,
-// -la mitad si la pagó el dueño.
+// VendorShare is what the ad adds to what is owed to the seller: +half if they paid it,
+// -half if the owner paid it.
 func (a AdExpense) VendorShare() float64 {
 	if a.PaidBy == "vendedor" {
 		return a.Amount / 2
@@ -48,18 +48,18 @@ func (a AdExpense) VendorShare() float64 {
 	return -a.Amount / 2
 }
 
-// Store es el archivo de ajustes. Es seguro usarlo desde varias goroutines.
+// Store is the settings file. It is safe to use from several goroutines.
 type Store struct {
 	mu         sync.Mutex
 	path       string
-	fallback   float64          // comisión antes del primer cambio (COMISION_POR_DATAFONO)
+	fallback   float64          // commission before the first change (COMISION_POR_DATAFONO)
 	Commission []CommissionRate `json:"commission"`
 	Payments   []VendorPayment  `json:"vendor_payments"`
 	Ads        []AdExpense      `json:"ads"`
 }
 
-// Load lee los ajustes de path; si el archivo no existe, empieza vacío.
-// fallback es la comisión que aplica a las ventas anteriores al primer cambio.
+// Load reads the settings from path; if the file doesn't exist, it starts empty.
+// fallback is the commission for sales before the first change.
 func Load(path string, fallback float64) (*Store, error) {
 	s := &Store{path: path, fallback: fallback}
 	data, err := os.ReadFile(path)
@@ -76,7 +76,7 @@ func Load(path string, fallback float64) (*Store, error) {
 	return s, nil
 }
 
-// CommissionAt es la comisión por datáfono vigente en el momento t.
+// CommissionAt is the per-terminal commission in effect at time t.
 func (s *Store) CommissionAt(t time.Time) float64 {
 	day := t.In(colombia).Format("2006-01-02")
 	s.mu.Lock()
@@ -91,18 +91,18 @@ func (s *Store) CommissionAt(t time.Time) float64 {
 	return v
 }
 
-// CurrentCommission es la comisión por datáfono vigente hoy.
+// CurrentCommission is the per-terminal commission in effect today.
 func (s *Store) CurrentCommission() float64 { return s.CommissionAt(time.Now()) }
 
-// CommissionHistory devuelve los cambios de comisión, del más antiguo al más nuevo.
+// CommissionHistory returns the commission changes, oldest first.
 func (s *Store) CommissionHistory() []CommissionRate {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]CommissionRate(nil), s.Commission...)
 }
 
-// SetCommission fija la comisión por datáfono desde el día from (AAAA-MM-DD; vacío = hoy).
-// Las ventas anteriores conservan su valor. Un cambio en una fecha que ya tenía valor lo reemplaza.
+// SetCommission sets the per-terminal commission from day from (YYYY-MM-DD; empty = today).
+// Earlier sales keep their value. A change on a date that already had a value replaces it.
 func (s *Store) SetCommission(value float64, from string) (CommissionRate, error) {
 	if value < 0 || value > 10_000_000 {
 		return CommissionRate{}, fmt.Errorf("valor de comisión inválido: %.0f", value)
@@ -127,7 +127,7 @@ func (s *Store) SetCommission(value float64, from string) (CommissionRate, error
 	return r, s.save()
 }
 
-// AddVendorPayment registra un pago al vendedor.
+// AddVendorPayment records a payment to the seller.
 func (s *Store) AddVendorPayment(p VendorPayment) error {
 	if p.Amount < 0 || p.Amount > 1_000_000_000 {
 		return fmt.Errorf("valor de pago inválido: %.0f", p.Amount)
@@ -138,7 +138,7 @@ func (s *Store) AddVendorPayment(p VendorPayment) error {
 	return s.save()
 }
 
-// RemoveLastVendorPayment borra el último pago registrado (para corregir un error). ok es false si no hay.
+// RemoveLastVendorPayment deletes the last recorded payment (to fix a mistake). ok is false if there is none.
 func (s *Store) RemoveLastVendorPayment() (p VendorPayment, ok bool, err error) {
 	s.mu.Lock()
 	if len(s.Payments) == 0 {
@@ -151,14 +151,14 @@ func (s *Store) RemoveLastVendorPayment() (p VendorPayment, ok bool, err error) 
 	return p, true, s.save()
 }
 
-// VendorPayments devuelve los pagos al vendedor, del más antiguo al más nuevo.
+// VendorPayments returns the payments to the seller, oldest first.
 func (s *Store) VendorPayments() []VendorPayment {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]VendorPayment(nil), s.Payments...)
 }
 
-// PaidTrackings son las guías que ya se le pagaron al vendedor, con el día del pago.
+// PaidTrackings are the labels already paid to the seller, with the payment day.
 func (s *Store) PaidTrackings() map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -171,8 +171,8 @@ func (s *Store) PaidTrackings() map[string]string {
 	return out
 }
 
-// VendorBalance es lo que quedó de los pagos y la publicidad compartida: positivo si se le sigue
-// debiendo al vendedor, negativo si él le debe al dueño (se descuenta de su próxima comisión).
+// VendorBalance is what is left from payments and shared ads: positive if the seller is still
+// owed, negative if they owe the owner (deducted from their next commission).
 func (s *Store) VendorBalance() float64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -186,7 +186,7 @@ func (s *Store) VendorBalance() float64 {
 	return b
 }
 
-// AddAd registra un gasto de publicidad compartido.
+// AddAd records a shared ad expense.
 func (s *Store) AddAd(a AdExpense) error {
 	if a.Amount <= 0 || a.Amount > 1_000_000_000 {
 		return fmt.Errorf("valor de publicidad inválido: %.0f", a.Amount)
@@ -200,7 +200,7 @@ func (s *Store) AddAd(a AdExpense) error {
 	return s.save()
 }
 
-// RemoveLastAd borra el último gasto de publicidad registrado. ok es false si no hay.
+// RemoveLastAd deletes the last recorded ad expense. ok is false if there is none.
 func (s *Store) RemoveLastAd() (a AdExpense, ok bool, err error) {
 	s.mu.Lock()
 	if len(s.Ads) == 0 {
@@ -213,14 +213,14 @@ func (s *Store) RemoveLastAd() (a AdExpense, ok bool, err error) {
 	return a, true, s.save()
 }
 
-// AdExpenses devuelve los gastos de publicidad, en el orden en que se registraron.
+// AdExpenses returns the ad expenses, in the order they were recorded.
 func (s *Store) AdExpenses() []AdExpense {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]AdExpense(nil), s.Ads...)
 }
 
-// save escribe el archivo de forma atómica (temporal + renombrado).
+// save writes the file atomically (temp + rename).
 func (s *Store) save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

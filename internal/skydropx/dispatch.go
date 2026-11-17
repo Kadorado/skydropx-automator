@@ -48,7 +48,7 @@ func (c *Client) Undispatched(ctx context.Context, since time.Time) ([]Undispatc
 		if done {
 			continue
 		}
-		st, err := c.Rastreo(ctx, u.Tracking, u.Carrier)
+		st, err := c.TrackStatus(ctx, u.Tracking, u.Carrier)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

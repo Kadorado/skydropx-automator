@@ -8,29 +8,29 @@ import (
 	"time"
 )
 
-// Status es el estado logístico y de cobro de un envío, calculado desde su último evento de rastreo.
+// Status is a shipment's logistics and collection state, computed from its last tracking event.
 type Status struct {
-	Key        string `json:"key"`        // en_camino | entregado | intento_entrega | creado | en_proceso | cancelado | sin_guia | sin_estado
-	Label      string `json:"label"`      // texto para la pantalla
-	LastEvent  string `json:"last_event"` // descripción del último evento
-	LastDate   string `json:"last_date"`  // fecha del último evento (ISO)
-	Cobro      string `json:"cobro"`      // cobrado | por_cobrar | no_aplica
-	CobroLabel string `json:"cobro_label"`
-	Raw        string `json:"raw,omitempty"` // estado técnico del último evento (delivery_attempt, in_return…)
-	// Días que el paquete esperó en la oficina de la transportadora hasta que el cliente lo recogió
-	// (0 si no pasó por oficina o no se ha recogido).
-	DiasEnOficina int          `json:"dias_en_oficina,omitempty"`
-	History       []TrackEvent `json:"-"` // últimos eventos de rastreo, del más nuevo al más antiguo
+	Key       string `json:"key"`        // en_camino | entregado | intento_entrega | creado | en_proceso | cancelado | sin_guia | sin_estado
+	Label     string `json:"label"`      // text for the screen
+	LastEvent string `json:"last_event"` // description of the last event
+	LastDate  string `json:"last_date"`  // date of the last event (ISO)
+	CODState  string `json:"cobro"`      // cobrado | por_cobrar | no_aplica
+	CODLabel  string `json:"cobro_label"`
+	Raw       string `json:"raw,omitempty"` // technical state of the last event (delivery_attempt, in_return…)
+	// Days the package waited at the carrier's office until the customer picked it up
+	// (0 if it didn't go through an office or hasn't been picked up).
+	DaysAtOffice int          `json:"dias_en_oficina,omitempty"`
+	History      []TrackEvent `json:"-"` // latest tracking events, newest first
 }
 
-// TrackEvent es un evento de rastreo de la transportadora.
+// TrackEvent is a carrier tracking event.
 type TrackEvent struct {
 	Date        time.Time
 	Description string
 	Status      string
 }
 
-// maxHistory es cuántos eventos recientes se guardan por guía.
+// maxHistory is how many recent events are kept per label.
 const maxHistory = 4
 
 type cachedStatus struct {
@@ -40,14 +40,14 @@ type cachedStatus struct {
 
 var (
 	statusMu    sync.Mutex
-	statusCache = map[string]cachedStatus{} // clave: número de guía
+	statusCache = map[string]cachedStatus{} // key: tracking number
 	lastTrackAt time.Time
 )
 
 const (
-	trackSpacing = 550 * time.Millisecond // por debajo del límite de 2 solicitudes por segundo
-	finalTTL     = 24 * time.Hour         // entregado y cancelado no cambian
-	activeTTL    = 10 * time.Minute       // en tránsito puede cambiar
+	trackSpacing = 550 * time.Millisecond // below the limit of 2 requests per second
+	finalTTL     = 24 * time.Hour         // delivered and cancelled don't change
+	activeTTL    = 10 * time.Minute       // in transit may change
 )
 
 type listItem struct {
@@ -60,8 +60,8 @@ type listItem struct {
 	} `json:"attributes"`
 }
 
-// ShipmentStatuses devuelve el estado de cada envío de la cuenta, indexado por ID de envío.
-// Usa caché para no repetir consultas de rastreo y respeta el límite de la API.
+// ShipmentStatuses returns the state of every shipment in the account, keyed by shipment ID.
+// It caches to avoid repeating tracking lookups and respects the API limit.
 func (c *Client) ShipmentStatuses(ctx context.Context) (map[string]Status, error) {
 	list, err := c.ListShipments(ctx)
 	if err != nil {
@@ -78,14 +78,14 @@ func (c *Client) ShipmentStatuses(ctx context.Context) (map[string]Status, error
 			continue
 		}
 		a := item.Attributes
-		cobro, cobroLabel := cobroOf(a.OnDeliveryStatus, a.WorkflowStatus)
+		cod, codLabel := codOf(a.OnDeliveryStatus, a.WorkflowStatus)
 
 		if a.WorkflowStatus == "cancelled" {
-			out[item.ID] = Status{Key: "cancelado", Label: "Cancelado", Cobro: cobro, CobroLabel: cobroLabel}
+			out[item.ID] = Status{Key: "cancelado", Label: "Cancelado", CODState: cod, CODLabel: codLabel}
 			continue
 		}
 		if a.MasterTrackingNumber == "" {
-			out[item.ID] = Status{Key: "sin_guia", Label: "Sin guía", Cobro: cobro, CobroLabel: cobroLabel}
+			out[item.ID] = Status{Key: "sin_guia", Label: "Sin guía", CODState: cod, CODLabel: codLabel}
 			continue
 		}
 
@@ -96,14 +96,14 @@ func (c *Client) ShipmentStatuses(ctx context.Context) (map[string]Status, error
 			}
 			st = Status{Key: "sin_estado", Label: "Sin rastreo"}
 		}
-		st.Cobro, st.CobroLabel = cobro, cobroLabel
+		st.CODState, st.CODLabel = cod, codLabel
 		out[item.ID] = st
 	}
 	return out, nil
 }
 
-// Rastreo devuelve el estado de una guía con sus últimos eventos (con caché y respetando el límite de la API).
-func (c *Client) Rastreo(ctx context.Context, tracking, carrier string) (Status, error) {
+// TrackStatus returns a label's state with its latest events (cached and respecting the API limit).
+func (c *Client) TrackStatus(ctx context.Context, tracking, carrier string) (Status, error) {
 	if c.isMock() {
 		return Status{}, ErrMockMode
 	}
@@ -112,13 +112,13 @@ func (c *Client) Rastreo(ctx context.Context, tracking, carrier string) (Status,
 	return c.trackingStatus(ctx, tracking, carrier)
 }
 
-// trackingStatus consulta (o toma de caché) el último evento de una guía.
+// trackingStatus looks up (or takes from cache) a label's last event.
 func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (Status, error) {
 	if cached, ok := statusCache[tracking]; ok && time.Now().Before(cached.exp) {
 		return cached.status, nil
 	}
 
-	// Espera lo necesario para no superar el límite de la API.
+	// Wait as needed to stay under the API limit.
 	if wait := trackSpacing - time.Since(lastTrackAt); wait > 0 {
 		select {
 		case <-ctx.Done():
@@ -149,7 +149,7 @@ func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (
 	var history []TrackEvent
 	var (
 		lastAt, stAt, delAt time.Time
-		branchAt            time.Time // primera vez que quedó en oficina
+		branchAt            time.Time // first time it was at the office
 		lastDesc, lastDate  string
 		stStatus            string
 		delivered           bool
@@ -169,7 +169,7 @@ func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (
 		if ev.Attributes.Status == "delivered" && (delAt.IsZero() || t.After(delAt)) {
 			delivered, delAt = true, t
 		}
-		// Último evento que sí trae estado técnico (los eventos administrativos como "Archivada" no lo traen).
+		// Last event that does have a technical state (administrative events like "Archivada" don't).
 		if ev.Attributes.Status != "" && (stAt.IsZero() || t.After(stAt)) {
 			stAt, stStatus = t, ev.Attributes.Status
 		}
@@ -181,7 +181,7 @@ func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (
 	}
 	st := Status{LastEvent: lastDesc, LastDate: lastDate, Key: "creado", Label: "Creado", Raw: stStatus, History: history}
 	if delivered && !branchAt.IsZero() && delAt.After(branchAt) {
-		st.DiasEnOficina = int(delAt.Sub(branchAt).Hours() / 24)
+		st.DaysAtOffice = int(delAt.Sub(branchAt).Hours() / 24)
 	}
 	if delivered {
 		st.Raw = "delivered"
@@ -198,7 +198,7 @@ func (c *Client) trackingStatus(ctx context.Context, tracking, carrier string) (
 	return st, nil
 }
 
-// keyOf traduce el estado técnico de Skydropx a una clave y etiqueta en español.
+// keyOf translates Skydropx's technical state into a key and a label in Spanish.
 func keyOf(status string) (string, string) {
 	switch status {
 	case "delivered":
@@ -214,7 +214,7 @@ func keyOf(status string) (string, string) {
 	}
 }
 
-func cobroOf(onDelivery, workflow string) (string, string) {
+func codOf(onDelivery, workflow string) (string, string) {
 	if workflow == "cancelled" {
 		return "no_aplica", "—"
 	}

@@ -7,10 +7,10 @@ import (
 	"skydropx-automator/internal/telegram"
 )
 
-// Textos de /ayuda de cada grupo, pensados para fijarlos en el chat. Si se agregan comandos,
-// se actualizan aquí y se vuelve a fijar la respuesta de /ayuda.
+// /ayuda texts for each group, meant to be pinned in the chat. If commands are added,
+// update them here and pin the /ayuda answer again.
 
-const ayudaGestion = `📌 <b>GESTIÓN — guía rápida</b>
+const helpOps = `📌 <b>GESTIÓN — guía rápida</b>
 <i>Toca una sección para verla completa. Los comandos en gris se copian al tocarlos: cambia el número y envía.</i>
 
 🚚 <b>DESPACHAR</b>
@@ -75,7 +75,7 @@ Cada pedido guarda al cliente solo. Si el pedido trae <code>Autoriza datos: SÍ<
 
 /ayuda — ver esta guía otra vez`
 
-const ayudaVendedor = `📌 <b>CÓMO CREAR UN PEDIDO</b>
+const helpSeller = `📌 <b>CÓMO CREAR UN PEDIDO</b>
 <i>Toca el formato para copiarlo, cambia los datos del cliente y envíalo en un solo mensaje.</i>
 
 <code>Nombre: Ana Pérez
@@ -109,8 +109,8 @@ Fuente: Facebook</code>
 
 /ayuda — ver esta guía otra vez`
 
-// ayudaGrupoGuias es la ayuda del grupo donde el vendedor recibe las guías (no crea pedidos ahí).
-const ayudaGrupoGuias = `📌 <b>GRUPO DE GUÍAS</b>
+// helpLabelsGroup is the help of the group where the seller receives the labels (no orders are created there).
+const helpLabelsGroup = `📌 <b>GRUPO DE GUÍAS</b>
 <i>Aquí llega cada guía lista para reenviársela al comprador, y todo lo que pasa con el envío.</i>
 
 🔔 <b>LLEGAN SOLOS</b> · no tienes que escribir nada
@@ -136,9 +136,9 @@ const ayudaGrupoGuias = `📌 <b>GRUPO DE GUÍAS</b>
 🛒 Los pedidos se crean escribiéndole al bot por chat privado.
 /ayuda — ver esta guía otra vez`
 
-// Menús de comandos de cada grupo (lo que Telegram sugiere al escribir "/").
+// Command menus of each group (what Telegram suggests when typing "/").
 var (
-	comandosGestion = []telegram.Command{
+	opsCommands = []telegram.Command{
 		{Command: "despachos", Description: "Guías que faltan por llevar a Interrapidísimo"},
 		{Command: "novedades", Description: "Envíos para gestionar: devoluciones, intentos fallidos, oficina"},
 		{Command: "guia", Description: "Estado de una guía (/guia 240012345678)"},
@@ -155,35 +155,35 @@ var (
 		{Command: "comision", Description: "Ver o cambiar la comisión del vendedor por datáfono"},
 		{Command: "ayuda", Description: "Ver todos los comandos y avisos"},
 	}
-	comandosVendedor = []telegram.Command{
+	sellerCommands = []telegram.Command{
 		{Command: "guia", Description: "Ver en qué va un envío (/guia 240012345678)"},
 		{Command: "cliente", Description: "Historial de un cliente (/cliente 1234567890)"},
 		{Command: "ayuda", Description: "Cómo enviar un pedido"},
 	}
-	comandosGrupoGuias = []telegram.Command{
+	labelsGroupCommands = []telegram.Command{
 		{Command: "guia", Description: "Ver en qué va un envío (/guia 240012345678)"},
 		{Command: "cliente", Description: "Historial de un cliente (/cliente 1234567890)"},
 		{Command: "ayuda", Description: "Qué llega a este grupo"},
 	}
 )
 
-// configurarComandos fija el menú de comandos de tus grupos y del vendedor al arrancar.
-func (b *Bot) configurarComandos(ctx context.Context) {
-	for _, id := range b.gestionChats() {
-		if err := b.tg.SetChatCommands(ctx, id, comandosGestion); err != nil {
+// setupCommands sets the command menu of your groups and the seller's at startup.
+func (b *Bot) setupCommands(ctx context.Context) {
+	for _, id := range b.opsChats() {
+		if err := b.tg.SetChatCommands(ctx, id, opsCommands); err != nil {
 			log.Printf("bot: no se pudo fijar el menú de comandos del grupo de gestión: %v", err)
 		}
 	}
-	vendedor := append(append([]int64(nil), b.opts.AdminChatIDs...), b.opts.AllowedChatIDs...)
-	visto := map[int64]bool{}
-	for _, id := range vendedor {
-		if visto[id] || b.isGestion(id) {
+	seller := append(append([]int64(nil), b.opts.AdminChatIDs...), b.opts.AllowedChatIDs...)
+	seen := map[int64]bool{}
+	for _, id := range seller {
+		if seen[id] || b.isOps(id) {
 			continue
 		}
-		visto[id] = true
-		cmds := comandosVendedor
+		seen[id] = true
+		cmds := sellerCommands
 		if !b.isAllowed(id) {
-			cmds = comandosGrupoGuias // grupo solo para recibir guías
+			cmds = labelsGroupCommands // group only for receiving labels
 		}
 		if err := b.tg.SetChatCommands(ctx, id, cmds); err != nil {
 			log.Printf("bot: no se pudo fijar el menú de comandos del chat %d: %v", id, err)

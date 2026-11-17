@@ -82,7 +82,7 @@ func (h *APIHandler) handleCreateShipment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 1. Validación de campos obligatorios antes de contactar a Skydropx
+	// 1. Validate required fields before contacting Skydropx
 	missing := parser.ValidateShipmentData(req.Data)
 	if len(missing) > 0 {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
@@ -92,7 +92,7 @@ func (h *APIHandler) handleCreateShipment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 2. Control de Idempotencia para evitar envíos duplicados por doble clic o reintentos
+	// 2. Idempotency check to avoid duplicate shipments from double clicks or retries
 	idemKey := strings.TrimSpace(req.IdempotencyKey)
 	if idemKey == "" {
 		idemKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
@@ -109,14 +109,14 @@ func (h *APIHandler) handleCreateShipment(w http.ResponseWriter, r *http.Request
 		h.mu.Unlock()
 	}
 
-	// 3. Crear envío en Skydropx
+	// 3. Create the shipment in Skydropx
 	result, err := h.skydropxClient.CreateShipment(r.Context(), req.Data)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 
-	// 4. Guardar en caché temporal (idempotencia y consulta por ID)
+	// 4. Save in the temporary cache (idempotency and lookup by ID)
 	h.mu.Lock()
 	if idemKey != "" {
 		h.idempotency[idemKey] = idempotencyEntry{
@@ -143,7 +143,7 @@ func (h *APIHandler) handleGetShipment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-// handleMockLabel genera una vista imprimible simulada cuando SKYDROPX_MODE=mock
+// handleMockLabel renders a simulated printable view when SKYDROPX_MODE=mock
 func (h *APIHandler) handleMockLabel(w http.ResponseWriter, r *http.Request) {
 	tracking := r.PathValue("tracking")
 	name := r.URL.Query().Get("name")

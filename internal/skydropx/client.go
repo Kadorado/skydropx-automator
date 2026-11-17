@@ -26,7 +26,7 @@ type Client struct {
 
 	origin originTemplate
 
-	// La lista de envíos se comparte unos segundos entre el panel, el rastreo, finanzas y el bot.
+	// The shipment list is shared for a few seconds between the dashboard, tracking, finance and the bot.
 	listMu       sync.Mutex
 	listCache    ShipmentList
 	listCachedAt time.Time
@@ -41,8 +41,8 @@ func NewClient(cfg config.Config) *Client {
 	}
 }
 
-// CreateShipment registra el pedido en Skydropx como orden (sin emitir guía),
-// o responde en modo mock si no hay modo live + credenciales OAuth.
+// CreateShipment registers the order in Skydropx as an order (without issuing a label),
+// or answers in mock mode if there is no live mode + OAuth credentials.
 func (c *Client) CreateShipment(ctx context.Context, data domain.ShipmentData) (domain.ShipmentResult, error) {
 	if c.isMock() {
 		return c.createMockShipment(data), nil
@@ -62,20 +62,20 @@ func (c *Client) createMockShipment(data domain.ShipmentData) domain.ShipmentRes
 	return domain.ShipmentResult{
 		ID:             shipmentID,
 		Status:         "created",
-		RecipientName:  data.Nombre,
-		Destination:    fmt.Sprintf("%s, %s", data.Ciudad, data.Departamento),
+		RecipientName:  data.Name,
+		Destination:    fmt.Sprintf("%s, %s", data.City, data.Department),
 		Carrier:        c.cfg.PreferredCarrier,
 		TrackingNumber: tracking,
-		LabelURL:       fmt.Sprintf("/api/mock-label/%s?name=%s&city=%s", tracking, urlEscape(data.Nombre), urlEscape(data.Ciudad)),
+		LabelURL:       fmt.Sprintf("/api/mock-label/%s?name=%s&city=%s", tracking, urlEscape(data.Name), urlEscape(data.City)),
 		EstimatedCost:  "$14.800 COP (Simulado)",
 		IsMock:         true,
 		CreatedAt:      now,
 	}
 }
 
-// getAccessToken obtiene (y cachea) el bearer token OAuth. Expira en 2 horas según la documentación.
-// ASUNCIÓN: el body de POST /api/v1/oauth/token usa grant_type=client_credentials con client_id/client_secret
-// y la respuesta trae access_token y expires_in. Verificar contra el OpenAPI de la cuenta.
+// getAccessToken gets (and caches) the OAuth bearer token. It expires in 2 hours according to the docs.
+// ASSUMPTION: the body of POST /api/v1/oauth/token uses grant_type=client_credentials with client_id/client_secret
+// and the response has access_token and expires_in. Verify against the account's OpenAPI.
 func (c *Client) getAccessToken(ctx context.Context) (string, error) {
 	c.tokenMu.Lock()
 	defer c.tokenMu.Unlock()
@@ -119,39 +119,39 @@ func (c *Client) getAccessToken(ctx context.Context) (string, error) {
 		ttl = 2 * time.Hour
 	}
 	c.accessToken = tok.AccessToken
-	c.tokenExpiry = time.Now().Add(ttl - 2*time.Minute) // margen antes de expirar
+	c.tokenExpiry = time.Now().Add(ttl - 2*time.Minute) // margin before expiry
 	return c.accessToken, nil
 }
 
-// createLiveOrder crea una orden en Skydropx (POST /api/v1/orders/) con origen y destinatario.
-// No cotiza ni emite guía: la orden queda lista para que se finalice a mano en Skydropx.
+// createLiveOrder creates an order in Skydropx (POST /api/v1/orders/) with origin and recipient.
+// It neither quotes nor issues a label: the order is ready to be finished by hand in Skydropx.
 func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) (domain.ShipmentResult, error) {
 	token, err := c.getAccessToken(ctx)
 	if err != nil {
 		return domain.ShipmentResult{}, err
 	}
 
-	// La dirección guardada en Skydropx reemplaza los campos de origen enviados abajo.
+	// The address saved in Skydropx replaces the origin fields sent below.
 	originTemplateID, err := c.OriginTemplateID(ctx)
 	if err != nil {
 		return domain.ShipmentResult{}, err
 	}
 
-	destPostal := strings.TrimSpace(data.CodigoPostal)
+	destPostal := strings.TrimSpace(data.PostalCode)
 	if destPostal == "" {
-		destPostal = parser.LookupPostalCode(data.Ciudad)
+		destPostal = parser.LookupPostalCode(data.City)
 	}
 
-	qty := maxInt(1, data.Cantidad)
-	declaredAmount := data.ValorUnitario * float64(qty) // valor declarado = unitario × unidades
+	qty := maxInt(1, data.Quantity)
+	declaredAmount := data.UnitPrice * float64(qty) // valor declarado = unitario × unidades
 	now := time.Now()
 	reference := fmt.Sprintf("WA-%d", now.UnixMilli())
 
-	// ASUNCIÓN: el campo tax_id_number del destinatario recibe el documento de identidad.
+	// ASSUMPTION: the recipient's tax_id_number field takes the ID document.
 	order := map[string]any{
 		"reference":               reference,
-		"cash_on_delivery":        true, // contra entrega: la transportadora recauda el valor declarado
-		"recipient_pays_shipping": true, // el destinatario paga el costo del envío al recibir
+		"cash_on_delivery":        true, // cash on delivery: the carrier collects the declared value
+		"recipient_pays_shipping": true, // the recipient pays the shipping cost on receipt
 		"parcels": []map[string]any{
 			{
 				"weight":            c.cfg.DefaultWeightKg * float64(qty),
@@ -161,14 +161,14 @@ func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) 
 				"quantity":          1,
 				"dimension_unit":    "CM",
 				"mass_unit":         "KG",
-				"package_type":      "4G", // ASUNCIÓN: código de empaque por defecto; confirmar con la lista de códigos
+				"package_type":      "4G", // ASSUMPTION: default packaging code; confirm with the code list
 				"package_content":   c.cfg.DefaultContent,
 				"declared_amount":   declaredAmount,
-				"package_protected": false, // Protección Plus desactivada
+				"package_protected": false, // Protección Plus disabled
 				"products": []map[string]any{
 					{
 						"name":     c.cfg.DefaultContent,
-						"price":    fmt.Sprintf("%.2f", data.ValorUnitario),
+						"price":    fmt.Sprintf("%.2f", data.UnitPrice),
 						"quantity": qty,
 						"weight":   c.cfg.DefaultWeightKg,
 						"height":   c.cfg.DefaultHeightCm,
@@ -194,17 +194,17 @@ func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) 
 			"email":               c.cfg.OriginEmail,
 		},
 		"recipient_address": map[string]any{
-			"address":       data.Direccion,
-			"sector":        data.Barrio,
-			"reference":     data.Referencia,
-			"city":          data.Ciudad,
-			"state":         data.Departamento,
+			"address":       data.Address,
+			"sector":        data.Neighborhood,
+			"reference":     data.Reference,
+			"city":          data.City,
+			"state":         data.Department,
 			"postal_code":   destPostal,
 			"country":       "CO",
-			"person_name":   data.Nombre,
-			"phone":         data.Telefono,
-			"email":         data.Correo,
-			"tax_id_number": data.Documento,
+			"person_name":   data.Name,
+			"phone":         data.Phone,
+			"email":         data.Email,
+			"tax_id_number": data.Document,
 		},
 	}
 
@@ -242,9 +242,9 @@ func (c *Client) createLiveOrder(ctx context.Context, data domain.ShipmentData) 
 
 	return domain.ShipmentResult{
 		ID:            created.Data.ID,
-		Status:        "pending_label", // orden creada; la guía se emite manualmente en Skydropx
-		RecipientName: data.Nombre,
-		Destination:   fmt.Sprintf("%s, %s", data.Ciudad, data.Departamento),
+		Status:        "pending_label", // order created; the label is issued manually in Skydropx
+		RecipientName: data.Name,
+		Destination:   fmt.Sprintf("%s, %s", data.City, data.Department),
 		Carrier:       c.cfg.PreferredCarrier,
 		IsMock:        false,
 		CreatedAt:     now,

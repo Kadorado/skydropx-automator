@@ -11,9 +11,9 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
-// TestSheetsGuiasReales arma hojas con guías reales. Las guías tienen datos de clientes y no van
-// en el repositorio: LABELS_DIR apunta a una carpeta con label_*.pdf y SHEETS_OUT al PDF de salida.
-func TestSheetsGuiasReales(t *testing.T) {
+// TestSheetsRealLabels builds sheets with real labels. The labels have customer data and aren't
+// in the repository: LABELS_DIR points to a folder with label_*.pdf and SHEETS_OUT to the output PDF.
+func TestSheetsRealLabels(t *testing.T) {
 	dir := os.Getenv("LABELS_DIR")
 	if dir == "" {
 		t.Skip("LABELS_DIR no está definido")
@@ -22,20 +22,20 @@ func TestSheetsGuiasReales(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatalf("no hay label_*.pdf en %s", dir)
 	}
-	var guias [][]byte
-	for len(guias) < 7 {
+	var lbls [][]byte
+	for len(lbls) < 7 {
 		for _, f := range files {
-			if len(guias) == 7 {
+			if len(lbls) == 7 {
 				break
 			}
 			b, err := os.ReadFile(f)
 			if err != nil {
 				t.Fatal(err)
 			}
-			guias = append(guias, b)
+			lbls = append(lbls, b)
 		}
 	}
-	out, err := Sheets(context.Background(), guias)
+	out, err := Sheets(context.Background(), lbls)
 	if err != nil {
 		t.Fatal(err)
 	}

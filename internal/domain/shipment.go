@@ -2,26 +2,26 @@ package domain
 
 import "time"
 
-// ShipmentData representa los datos del destinatario extraídos y editables.
+// ShipmentData holds the recipient's extracted, editable data.
 type ShipmentData struct {
-	Nombre       string `json:"nombre"`
-	Documento    string `json:"documento"`
-	Telefono     string `json:"telefono"`
-	Correo       string `json:"correo"`
-	Pais         string `json:"pais"`
-	Departamento string `json:"departamento"`
-	Ciudad       string `json:"ciudad"`
-	CodigoPostal string `json:"codigo_postal"`
-	Barrio       string `json:"barrio"`
-	Direccion    string `json:"direccion"`
-	Cantidad     int    `json:"cantidad"`
-	// ValorUnitario en COP por unidad; el valor declarado del paquete = ValorUnitario × Cantidad.
-	ValorUnitario float64 `json:"valor_unitario"`
-	Referencia    string  `json:"referencia"`
-	// AutorizaDatos es la respuesta del cliente a usar sus datos para publicidad: "si", "no" o vacío.
-	AutorizaDatos string `json:"autoriza_datos,omitempty"`
-	// Fuente es de dónde llegó el cliente (facebook, whatsapp, referido…), en minúsculas; vacío si no se indicó.
-	Fuente string `json:"fuente,omitempty"`
+	Name         string `json:"nombre"`
+	Document     string `json:"documento"`
+	Phone        string `json:"telefono"`
+	Email        string `json:"correo"`
+	Country      string `json:"pais"`
+	Department   string `json:"departamento"`
+	City         string `json:"ciudad"`
+	PostalCode   string `json:"codigo_postal"`
+	Neighborhood string `json:"barrio"`
+	Address      string `json:"direccion"`
+	Quantity     int    `json:"cantidad"`
+	// UnitPrice in COP per unit; the package's declared value = UnitPrice × Quantity.
+	UnitPrice float64 `json:"valor_unitario"`
+	Reference string  `json:"referencia"`
+	// DataConsent is the customer's answer about using their data for marketing: "si", "no" or empty.
+	DataConsent string `json:"autoriza_datos,omitempty"`
+	// Source is where the customer came from (facebook, whatsapp, referido…), lowercase; empty if not given.
+	Source string `json:"fuente,omitempty"`
 }
 
 type ParseRequest struct {

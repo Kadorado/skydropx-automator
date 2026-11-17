@@ -11,7 +11,7 @@ import (
 	"skydropx-automator/internal/skydropx"
 )
 
-// RegisterShipmentRoutes expone los envíos de Skydropx para la pestaña "Mis envíos".
+// RegisterShipmentRoutes exposes Skydropx shipments for the "Mis envíos" tab.
 func (h *APIHandler) RegisterShipmentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/skydropx/shipments", h.handleListShipments)
 	mux.HandleFunc("GET /api/skydropx/shipments/{id}", h.handleShipmentDetail)
@@ -19,31 +19,31 @@ func (h *APIHandler) RegisterShipmentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/skydropx/tracking", h.handleTracking)
 	mux.HandleFunc("GET /api/skydropx/status", h.handleStatuses)
 	mux.HandleFunc("GET /api/skydropx/order-quantities", h.handleOrderQuantities)
-	mux.HandleFunc("GET /api/finanzas", h.handleFinanzas)
-	mux.HandleFunc("GET /api/ajustes", h.handleAjustes)
-	mux.HandleFunc("POST /api/ajustes/comision", h.handleSetComision)
+	mux.HandleFunc("GET /api/finanzas", h.handleFinance)
+	mux.HandleFunc("GET /api/ajustes", h.handleSettings)
+	mux.HandleFunc("POST /api/ajustes/comision", h.handleSetCommission)
 }
 
-// handleAjustes devuelve la comisión vigente del vendedor y sus cambios.
-func (h *APIHandler) handleAjustes(w http.ResponseWriter, r *http.Request) {
+// handleSettings returns the seller's current commission and its changes.
+func (h *APIHandler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"comision":  h.settings.CurrentCommission(),
 		"historial": h.settings.CommissionHistory(),
 	})
 }
 
-// handleSetComision cambia la comisión por datáfono desde una fecha ({"valor":12000,"desde":"AAAA-MM-DD"};
-// sin desde, desde hoy). Las ventas anteriores conservan su valor.
-func (h *APIHandler) handleSetComision(w http.ResponseWriter, r *http.Request) {
+// handleSetCommission changes the per-terminal commission from a date ({"valor":12000,"desde":"AAAA-MM-DD"};
+// without desde, from today). Earlier sales keep their value.
+func (h *APIHandler) handleSetCommission(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Valor float64 `json:"valor"`
-		Desde string  `json:"desde"`
+		Value float64 `json:"valor"`
+		From  string  `json:"desde"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "datos inválidos")
 		return
 	}
-	rate, err := h.settings.SetCommission(req.Valor, req.Desde)
+	rate, err := h.settings.SetCommission(req.Value, req.From)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -51,9 +51,9 @@ func (h *APIHandler) handleSetComision(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rate)
 }
 
-// handleFinanzas devuelve el resumen de dinero entre ?desde= y ?hasta= (AAAA-MM-DD, hora de Colombia).
-// Sin desde, cuenta desde el envío más antiguo disponible; sin hasta, hasta hoy.
-func (h *APIHandler) handleFinanzas(w http.ResponseWriter, r *http.Request) {
+// handleFinance returns the money summary between ?desde= and ?hasta= (YYYY-MM-DD, Colombia time).
+// Without desde, counts from the oldest available shipment; without hasta, up to today.
+func (h *APIHandler) handleFinance(w http.ResponseWriter, r *http.Request) {
 	period, err := skydropx.NewPeriod(r.URL.Query().Get("desde"), r.URL.Query().Get("hasta"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -67,7 +67,7 @@ func (h *APIHandler) handleFinanzas(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, f)
 }
 
-// handleOrderQuantities devuelve la cantidad de artículos de las órdenes pedidas (?ids=a,b,c).
+// handleOrderQuantities returns the item count of the requested orders (?ids=a,b,c).
 func (h *APIHandler) handleOrderQuantities(w http.ResponseWriter, r *http.Request) {
 	ids := strings.Split(r.URL.Query().Get("ids"), ",")
 	quantities, err := h.skydropxClient.OrderQuantities(r.Context(), ids)
@@ -110,8 +110,8 @@ func (h *APIHandler) handleShipmentDetail(w http.ResponseWriter, r *http.Request
 	writeRawJSON(w, body)
 }
 
-// handleShipmentLabel descarga el PDF del envío a través del servidor, para no exponer el token al navegador.
-// ASUNCIÓN: la URL de la guía viene en data.attributes.label_url. Hoy el listado no la trae; verificar con un envío finalizado.
+// handleShipmentLabel downloads the shipment's PDF through the server, so the token isn't exposed to the browser.
+// ASSUMPTION: the label URL comes in data.attributes.label_url. The list doesn't include it today; verify with a finished shipment.
 func (h *APIHandler) handleShipmentLabel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	body, err := h.skydropxClient.GetShipment(r.Context(), id)
@@ -120,7 +120,7 @@ func (h *APIHandler) handleShipmentLabel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// La guía (label_url) viene en el paquete del envío, dentro de "included" (tipo "package").
+	// The label (label_url) comes in the shipment's package, inside "included" (type "package").
 	var parsed struct {
 		Included []struct {
 			Type       string `json:"type"`
@@ -158,7 +158,7 @@ func (h *APIHandler) handleShipmentLabel(w http.ResponseWriter, r *http.Request)
 	_, _ = w.Write(data)
 }
 
-// handleTracking consulta el rastreo de una guía (solo lectura).
+// handleTracking looks up a label's tracking (read only).
 func (h *APIHandler) handleTracking(w http.ResponseWriter, r *http.Request) {
 	tn := strings.TrimSpace(r.URL.Query().Get("tracking_number"))
 	carrier := strings.TrimSpace(r.URL.Query().Get("carrier_name"))
@@ -174,7 +174,7 @@ func (h *APIHandler) handleTracking(w http.ResponseWriter, r *http.Request) {
 	writeRawJSON(w, body)
 }
 
-// handleStatuses devuelve el estado logístico y de cobro de cada envío (con caché).
+// handleStatuses returns the logistics and collection state of each shipment (cached).
 func (h *APIHandler) handleStatuses(w http.ResponseWriter, r *http.Request) {
 	statuses, err := h.skydropxClient.ShipmentStatuses(r.Context())
 	if err != nil {

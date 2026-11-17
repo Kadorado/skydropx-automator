@@ -6,23 +6,23 @@ import (
 	"time"
 )
 
-// CODShipment es el estado del cobro contra entrega de un envío con guía.
+// CODShipment is the cash-on-delivery collection state of a shipment with a label.
 type CODShipment struct {
 	ID       string
-	Date     string // creación de la guía (RFC 3339)
+	Date     string // label creation (RFC 3339)
 	Tracking string
 	Carrier  string
 	Customer string
 	Phone    string
 	City     string
-	TaxID    string // cédula del destinatario
+	TaxID    string // recipient's ID document
 	OrderID  string
-	Status   string  // pending | collected | failed | cancelled | vacío
-	Reported float64 // monto de contra entrega que reporta Skydropx (a veces con el envío, a veces sin él)
-	Cost     float64 // costo de la guía
+	Status   string  // pending | collected | failed | cancelled | empty
+	Reported float64 // cash-on-delivery amount reported by Skydropx (sometimes with shipping, sometimes without)
+	Cost     float64 // label cost
 }
 
-// CODShipments devuelve el estado del cobro de todos los envíos con guía de la cuenta.
+// CODShipments returns the collection state of every shipment with a label in the account.
 func (c *Client) CODShipments(ctx context.Context) ([]CODShipment, error) {
 	if c.isMock() {
 		return nil, ErrMockMode
@@ -47,8 +47,8 @@ func (c *Client) CODShipments(ctx context.Context) ([]CODShipment, error) {
 	return out, nil
 }
 
-// CODAmounts devuelve lo que la transportadora le cobra al cliente y el valor del producto
-// (0 si no se pudo consultar la orden), con la misma cuenta que Finanzas.
+// CODAmounts returns what the carrier charges the customer and the product's value
+// (0 if the order couldn't be looked up), with the same math as Finanzas.
 func (c *Client) CODAmounts(ctx context.Context, s CODShipment) (pays, product float64) {
 	if s.OrderID != "" {
 		_, _ = c.orderQuantitiesUpTo(ctx, []string{s.OrderID}, 1)
@@ -58,19 +58,19 @@ func (c *Client) CODAmounts(ctx context.Context, s CODShipment) (pays, product f
 	return fs.customerPays(), product
 }
 
-// Problema es un envío abierto que hay que gestionar con el cliente.
-type Problema struct {
+// Problem is an open shipment that needs follow-up with the customer.
+type Problem struct {
 	CODShipment
 	Kind      string // devolucion | intento | oficina | novedad
-	LastEvent string // último evento de rastreo
+	LastEvent string // last tracking event
 	LastDate  string
-	History   []TrackEvent // últimos eventos, del más nuevo al más antiguo
+	History   []TrackEvent // latest events, newest first
 }
 
-// Problemas revisa los envíos con guía creados desde since que no se han entregado ni cobrado y devuelve
-// los que están en devolución o sin cobrar, con intento de entrega fallido, en oficina o con novedad.
-// Consulta el rastreo de cada uno (con caché y respetando el límite de la API).
-func (c *Client) Problemas(ctx context.Context, since time.Time) ([]Problema, int, error) {
+// Problems checks shipments with a label created since since that haven't been delivered or collected and returns
+// the ones being returned or not collected, with a failed delivery attempt, at the office or with an incident.
+// It looks up each one's tracking (cached and respecting the API limit).
+func (c *Client) Problems(ctx context.Context, since time.Time) ([]Problem, int, error) {
 	if c.isMock() {
 		return nil, 0, ErrMockMode
 	}
@@ -81,34 +81,34 @@ func (c *Client) Problemas(ctx context.Context, since time.Time) ([]Problema, in
 	p := Period{From: since, To: time.Now().In(colombia).Add(24 * time.Hour)}
 	statusMu.Lock()
 	defer statusMu.Unlock()
-	var out []Problema
-	revisados := 0
+	var out []Problem
+	checked := 0
 	for _, s := range withLabel(financeShipments(list, p)) {
 		if s.Cancelled || s.OnDelivery == "collected" {
 			continue
 		}
-		pr := Problema{CODShipment: CODShipment{
+		pr := Problem{CODShipment: CODShipment{
 			ID: s.ID, Date: s.Date, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Phone: s.Phone, City: s.City,
 			TaxID: s.TaxID, OrderID: s.OrderID,
 			Status: s.OnDelivery, Reported: s.CODAmount, Cost: s.Cost,
 		}}
-		revisados++
+		checked++
 		st, err := c.trackingStatus(ctx, s.Tracking, s.Carrier)
 		if err != nil && ctx.Err() != nil {
-			return out, revisados, ctx.Err()
+			return out, checked, ctx.Err()
 		}
 		pr.LastEvent, pr.LastDate, pr.History = st.LastEvent, st.LastDate, st.History
-		pr.Kind = problemaKind(s.OnDelivery, st.Raw, st.LastEvent)
+		pr.Kind = problemKind(s.OnDelivery, st.Raw, st.LastEvent)
 		if pr.Kind != "" {
 			out = append(out, pr)
 		}
 	}
-	return out, revisados, nil
+	return out, checked, nil
 }
 
-// EstadoPorCobrar dice dónde va un envío por cobrar según su rastreo: "oficina" (para reclamar),
-// "novedad" (intento fallido, novedad o devolución) o "camino". Si no se puede rastrear, "camino".
-func (c *Client) EstadoPorCobrar(ctx context.Context, tracking, carrier string) string {
+// PendingCODState says where a shipment to collect is according to its tracking: "oficina" (to pick up),
+// "novedad" (failed attempt, incident or return) or "camino". If it can't be tracked, "camino".
+func (c *Client) PendingCODState(ctx context.Context, tracking, carrier string) string {
 	if c.isMock() || tracking == "" {
 		return "camino"
 	}
@@ -118,7 +118,7 @@ func (c *Client) EstadoPorCobrar(ctx context.Context, tracking, carrier string) 
 	if err != nil {
 		return "camino"
 	}
-	switch problemaKind("pending", st.Raw, st.LastEvent) {
+	switch problemKind("pending", st.Raw, st.LastEvent) {
 	case "oficina":
 		return "oficina"
 	case "":
@@ -128,8 +128,8 @@ func (c *Client) EstadoPorCobrar(ctx context.Context, tracking, carrier string) 
 	}
 }
 
-// problemaKind clasifica un envío según su cobro y su último evento de rastreo ("" si va bien).
-func problemaKind(onDelivery, raw, lastEvent string) string {
+// problemKind classifies a shipment by its collection and last tracking event ("" if it's fine).
+func problemKind(onDelivery, raw, lastEvent string) string {
 	switch {
 	case raw == "delivered":
 		return ""

@@ -14,115 +14,115 @@ import (
 )
 
 var (
-	reNombre       = regexp.MustCompile(`(?im)^\s*(?:receptor|nombre(?:\s+completo)?|destinatario|cliente)\s*:\s*(.+)$`)
-	reDocumento    = regexp.MustCompile(`(?im)^\s*(?:documento|c[eé]dula|cc|nit|identificaci[oó]n)\s*:\s*([0-9.\-\s]+)$`)
-	reTelefono     = regexp.MustCompile(`(?im)^\s*(?:tel[eé]fono|cel|celular|whatsapp|m[oó]vil)\s*:\s*([0-9+\s\-()]+)$`)
-	reDepartamento = regexp.MustCompile(`(?im)^\s*(?:departamento|depto|estado)\s*:\s*(.+)$`)
-	reCiudad       = regexp.MustCompile(`(?im)^\s*(?:ciudad|municipio)\s*:\s*(.+)$`)
-	reBarrio       = regexp.MustCompile(`(?im)^\s*(?:barrio|sector|urbanizaci[oó]n)\s*:\s*(.+)$`)
-	reDireccion    = regexp.MustCompile(`(?im)^\s*(?:direcci[oó]n|dir)\s*:\s*(.+)$`)
-	reCorreo       = regexp.MustCompile(`(?im)^\s*(?:correo(?:\s+electr[oó]nico)?|email|e-mail)\s*:\s*([^\s]+)$`)
-	reCantidad     = regexp.MustCompile(`(?im)^\s*(?:cantidad|cant|unidades|paquetes)\s*:\s*(\d+)`)
-	reCodigoPostal = regexp.MustCompile(`(?im)^\s*(?:c[oó]digo\s+postal|cod(?:igo)?\.?\s*postal|cp)\s*:\s*(\d{5,6})\b`)
-	reAutoriza     = regexp.MustCompile(`(?im)^\s*(?:autoriza(?:\s+(?:datos|tratamiento(?:\s+de\s+datos)?))?|acepta\s+datos|autorizaci[oó]n(?:\s+de\s+datos)?)\s*:\s*(.+)$`)
-	reFuente       = regexp.MustCompile(`(?im)^\s*(?:fuente|origen|lleg[oó]\s+por|canal)\s*:\s*(.+)$`)
-	reValor        = regexp.MustCompile(`(?im)^\s*(?:valor(?:\s+unitario)?|precio(?:\s+unitario)?)\s*:\s*\$?\s*([\d][\d.,]*)`)
+	reName         = regexp.MustCompile(`(?im)^\s*(?:receptor|nombre(?:\s+completo)?|destinatario|cliente)\s*:\s*(.+)$`)
+	reDocument     = regexp.MustCompile(`(?im)^\s*(?:documento|c[eé]dula|cc|nit|identificaci[oó]n)\s*:\s*([0-9.\-\s]+)$`)
+	rePhone        = regexp.MustCompile(`(?im)^\s*(?:tel[eé]fono|cel|celular|whatsapp|m[oó]vil)\s*:\s*([0-9+\s\-()]+)$`)
+	reDepartment   = regexp.MustCompile(`(?im)^\s*(?:departamento|depto|estado)\s*:\s*(.+)$`)
+	reCity         = regexp.MustCompile(`(?im)^\s*(?:ciudad|municipio)\s*:\s*(.+)$`)
+	reNeighborhood = regexp.MustCompile(`(?im)^\s*(?:barrio|sector|urbanizaci[oó]n)\s*:\s*(.+)$`)
+	reAddress      = regexp.MustCompile(`(?im)^\s*(?:direcci[oó]n|dir)\s*:\s*(.+)$`)
+	reEmail        = regexp.MustCompile(`(?im)^\s*(?:correo(?:\s+electr[oó]nico)?|email|e-mail)\s*:\s*([^\s]+)$`)
+	reQuantity     = regexp.MustCompile(`(?im)^\s*(?:cantidad|cant|unidades|paquetes)\s*:\s*(\d+)`)
+	rePostalCode   = regexp.MustCompile(`(?im)^\s*(?:c[oó]digo\s+postal|cod(?:igo)?\.?\s*postal|cp)\s*:\s*(\d{5,6})\b`)
+	reConsent      = regexp.MustCompile(`(?im)^\s*(?:autoriza(?:\s+(?:datos|tratamiento(?:\s+de\s+datos)?))?|acepta\s+datos|autorizaci[oó]n(?:\s+de\s+datos)?)\s*:\s*(.+)$`)
+	reSource       = regexp.MustCompile(`(?im)^\s*(?:fuente|origen|lleg[oó]\s+por|canal)\s*:\s*(.+)$`)
+	reUnitPrice    = regexp.MustCompile(`(?im)^\s*(?:valor(?:\s+unitario)?|precio(?:\s+unitario)?)\s*:\s*\$?\s*([\d][\d.,]*)`)
 )
 
-// ParseWhatsAppMessage extrae los datos sin inventar campos faltantes.
+// ParseWhatsAppMessage extracts the data without inventing missing fields.
 func ParseWhatsAppMessage(raw string) domain.ParseResponse {
 	raw = normalizeWhatsApp(raw)
 	titleCaser := cases.Title(language.Spanish)
 	var warnings []string
 
 	data := domain.ShipmentData{
-		Pais:     "Colombia",
-		Cantidad: 1,
+		Country:  "Colombia",
+		Quantity: 1,
 	}
 
-	if m := reNombre.FindStringSubmatch(raw); len(m) > 1 {
-		data.Nombre = cleanSpaces(m[1])
+	if m := reName.FindStringSubmatch(raw); len(m) > 1 {
+		data.Name = cleanSpaces(m[1])
 	}
 
-	if m := reDocumento.FindStringSubmatch(raw); len(m) > 1 {
-		data.Documento = cleanDigits(m[1])
+	if m := reDocument.FindStringSubmatch(raw); len(m) > 1 {
+		data.Document = cleanDigits(m[1])
 	}
 
-	if m := reTelefono.FindStringSubmatch(raw); len(m) > 1 {
+	if m := rePhone.FindStringSubmatch(raw); len(m) > 1 {
 		tel := cleanDigits(m[1])
 		if len(tel) == 12 && strings.HasPrefix(tel, "57") {
 			tel = tel[2:]
 		}
-		data.Telefono = tel
+		data.Phone = tel
 	}
 
-	if m := reBarrio.FindStringSubmatch(raw); len(m) > 1 {
-		data.Barrio = titleCaser.String(strings.ToLower(cleanSpaces(m[1])))
+	if m := reNeighborhood.FindStringSubmatch(raw); len(m) > 1 {
+		data.Neighborhood = titleCaser.String(strings.ToLower(cleanSpaces(m[1])))
 	}
 
-	if m := reDireccion.FindStringSubmatch(raw); len(m) > 1 {
-		data.Direccion = cleanSpaces(m[1])
+	if m := reAddress.FindStringSubmatch(raw); len(m) > 1 {
+		data.Address = cleanSpaces(m[1])
 	}
 
-	if m := reAutoriza.FindStringSubmatch(raw); len(m) > 1 {
+	if m := reConsent.FindStringSubmatch(raw); len(m) > 1 {
 		switch strings.Trim(strings.ToLower(cleanSpaces(m[1])), ".!*_ ") {
 		case "si", "sí", "s", "x", "yes", "acepta", "autoriza", "ok":
-			data.AutorizaDatos = "si"
+			data.DataConsent = "si"
 		case "no", "n":
-			data.AutorizaDatos = "no"
+			data.DataConsent = "no"
 		}
 	}
-	if m := reFuente.FindStringSubmatch(raw); len(m) > 1 {
-		data.Fuente = strings.ToLower(strings.Trim(cleanSpaces(m[1]), ".*_ "))
+	if m := reSource.FindStringSubmatch(raw); len(m) > 1 {
+		data.Source = strings.ToLower(strings.Trim(cleanSpaces(m[1]), ".*_ "))
 	}
-	if m := reCorreo.FindStringSubmatch(raw); len(m) > 1 {
+	if m := reEmail.FindStringSubmatch(raw); len(m) > 1 {
 		email := strings.ToLower(cleanSpaces(m[1]))
 		if _, err := mail.ParseAddress(email); err == nil {
-			data.Correo = email
+			data.Email = email
 		} else {
-			data.Correo = email
+			data.Email = email
 			warnings = append(warnings, "El correo electrónico extraído no tiene un formato válido; revísalo.")
 		}
 	}
 
-	if m := reCantidad.FindStringSubmatch(raw); len(m) > 1 {
+	if m := reQuantity.FindStringSubmatch(raw); len(m) > 1 {
 		if qty, err := strconv.Atoi(m[1]); err == nil && qty > 0 {
-			data.Cantidad = qty
+			data.Quantity = qty
 		}
 	}
 
-	// Valor unitario en pesos. Acepta "60000", "60.000" o "$60,000" (COP no usa decimales).
-	if m := reValor.FindStringSubmatch(raw); len(m) > 1 {
+	// Unit price in pesos. Accepts "60000", "60.000" or "$60,000" (COP has no decimals).
+	if m := reUnitPrice.FindStringSubmatch(raw); len(m) > 1 {
 		if v, err := strconv.ParseFloat(cleanDigits(m[1]), 64); err == nil && v > 0 {
-			data.ValorUnitario = v
+			data.UnitPrice = v
 		}
 	}
 
-	// Departamento explícito (si viene en una línea aparte)
+	// Explicit department (if it comes on a separate line)
 	explicitDept := ""
-	if m := reDepartamento.FindStringSubmatch(raw); len(m) > 1 {
+	if m := reDepartment.FindStringSubmatch(raw); len(m) > 1 {
 		val := cleanSpaces(m[1])
-		// Evitar confundir "ESTADO: Pendiente de despacho" con departamento
+		// Avoid confusing "ESTADO: Pendiente de despacho" with a department
 		if !strings.Contains(strings.ToLower(val), "pendiente") && !strings.Contains(strings.ToLower(val), "despacho") {
 			explicitDept = titleCaser.String(strings.ToLower(val))
 		}
 	}
 
-	// Ciudad y resolución de departamento
-	if m := reCiudad.FindStringSubmatch(raw); len(m) > 1 {
+	// City and department resolution
+	if m := reCity.FindStringSubmatch(raw); len(m) > 1 {
 		city, dept, postal := ResolveCityAndDept(cleanSpaces(m[1]), titleCaser)
-		data.Ciudad = city
-		data.Departamento = dept
-		data.CodigoPostal = postal
+		data.City = city
+		data.Department = dept
+		data.PostalCode = postal
 	}
 
 	if explicitDept != "" {
-		data.Departamento = explicitDept
+		data.Department = explicitDept
 	}
 
-	// Un código postal explícito reemplaza el de referencia de la tabla de ciudades.
-	if m := reCodigoPostal.FindStringSubmatch(raw); len(m) > 1 {
-		data.CodigoPostal = m[1]
+	// An explicit postal code replaces the reference one from the city table.
+	if m := rePostalCode.FindStringSubmatch(raw); len(m) > 1 {
+		data.PostalCode = m[1]
 	}
 
 	missing := ValidateShipmentData(data)
@@ -133,32 +133,32 @@ func ParseWhatsAppMessage(raw string) domain.ParseResponse {
 	}
 }
 
-// ValidateShipmentData devuelve la lista de campos obligatorios faltantes o inválidos.
+// ValidateShipmentData returns the list of missing or invalid required fields.
 func ValidateShipmentData(d domain.ShipmentData) []string {
 	var missing []string
-	if strings.TrimSpace(d.Nombre) == "" {
+	if strings.TrimSpace(d.Name) == "" {
 		missing = append(missing, "nombre")
 	}
-	if strings.TrimSpace(d.Documento) == "" {
+	if strings.TrimSpace(d.Document) == "" {
 		missing = append(missing, "documento")
 	}
-	if len(cleanDigits(d.Telefono)) < 10 {
+	if len(cleanDigits(d.Phone)) < 10 {
 		missing = append(missing, "telefono")
 	}
-	if strings.TrimSpace(d.Departamento) == "" {
+	if strings.TrimSpace(d.Department) == "" {
 		missing = append(missing, "departamento")
 	}
-	if strings.TrimSpace(d.Ciudad) == "" {
+	if strings.TrimSpace(d.City) == "" {
 		missing = append(missing, "ciudad")
 	}
-	if strings.TrimSpace(d.Direccion) == "" {
+	if strings.TrimSpace(d.Address) == "" {
 		missing = append(missing, "direccion")
 	}
-	if d.ValorUnitario <= 0 {
+	if d.UnitPrice <= 0 {
 		missing = append(missing, "valor_unitario")
 	}
-	if d.Correo != "" {
-		if _, err := mail.ParseAddress(d.Correo); err != nil {
+	if d.Email != "" {
+		if _, err := mail.ParseAddress(d.Email); err != nil {
 			missing = append(missing, "correo (formato inválido)")
 		}
 	}

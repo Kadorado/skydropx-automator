@@ -1,4 +1,4 @@
-// Package labels arma las guías de Skydropx en hojas carta de 4 guías para imprimir.
+// Package labels lays out Skydropx labels on letter sheets of 4 labels for printing.
 package labels
 
 import (
@@ -12,24 +12,24 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
-// PerSheet es cuántas guías caben en una hoja carta (2 x 2).
+// PerSheet is how many labels fit on a letter sheet (2 x 2).
 const PerSheet = 4
 
-// La guía estándar de Interrapidísimo llega como hoja A4 horizontal (842 x 595) girada 90°,
-// con la etiqueta en este rectángulo. Sin el giro y recortada, la etiqueta queda derecha.
+// The standard Interrapidísimo label comes as a landscape A4 sheet (842 x 595) rotated 90°,
+// with the label in this rectangle. Unrotated and cropped, the label ends up upright.
 var interLabelBox = types.NewRectangle(10, 52, 358, 584)
 
-// Sheets une las guías (un PDF por guía) en un solo PDF con 4 guías por hoja carta.
-// Si son 7 guías salen 2 hojas: una de 4 y otra de 3.
-func Sheets(ctx context.Context, guias [][]byte) ([]byte, error) {
-	if len(guias) == 0 {
+// Sheets merges the labels (one PDF per label) into a single PDF with 4 labels per letter sheet.
+// 7 labels make 2 sheets: one of 4 and one of 3.
+func Sheets(ctx context.Context, lbls [][]byte) ([]byte, error) {
+	if len(lbls) == 0 {
 		return nil, fmt.Errorf("no hay guías para armar")
 	}
 	conf := model.NewDefaultConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
 
-	readers := make([]io.ReadSeeker, len(guias))
-	for i, g := range guias {
+	readers := make([]io.ReadSeeker, len(lbls))
+	for i, g := range lbls {
 		readers[i] = bytes.NewReader(g)
 	}
 	var merged bytes.Buffer
@@ -45,7 +45,7 @@ func Sheets(ctx context.Context, guias [][]byte) ([]byte, error) {
 		return nil, err
 	}
 	for p := 1; p <= pdf.PageCount; p++ {
-		if err := recortarEtiqueta(ctx, pdf, p); err != nil {
+		if err := cropLabel(ctx, pdf, p); err != nil {
 			return nil, err
 		}
 	}
@@ -66,9 +66,9 @@ func Sheets(ctx context.Context, guias [][]byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// recortarEtiqueta deja solo la etiqueta derecha si la página tiene el formato de Interrapidísimo.
-// Otros formatos se dejan tal cual y se ajustan completos a su cuarto de hoja.
-func recortarEtiqueta(ctx context.Context, pdf *model.Context, page int) error {
+// cropLabel keeps only the upright label if the page has the Interrapidísimo format.
+// Other formats are left as is and fitted whole into their quarter of the sheet.
+func cropLabel(ctx context.Context, pdf *model.Context, page int) error {
 	dict, _, inh, err := pdf.PageDict(ctx, page, false)
 	if err != nil {
 		return err

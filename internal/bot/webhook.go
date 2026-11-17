@@ -14,9 +14,9 @@ import (
 	"time"
 )
 
-// WebhookHandler recibe los eventos de Skydropx (Conexiones > Webhooks) y avisa la guía en cuanto
-// se crea el envío de una orden pendiente. La revisión periódica sigue funcionando como respaldo.
-// header es el nombre del encabezado de autenticación configurado en Skydropx (por defecto Authorization).
+// WebhookHandler receives Skydropx events (Conexiones > Webhooks) and announces the label as soon as
+// the shipment of a pending order is created. The periodic check keeps working as a fallback.
+// header is the name of the auth header configured in Skydropx (Authorization by default).
 func (b *Bot) WebhookHandler(secret, header string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -43,23 +43,23 @@ func (b *Bot) WebhookHandler(secret, header string) http.HandlerFunc {
 		if ev.Data.Type != "packages" {
 			return
 		}
-		// En contra entrega el cliente paga al recibir: entregado es pagado, y en devolución es no cobrado.
-		// "delivered_to_branch" no cuenta: el paquete espera en la oficina y todavía no se ha pagado.
+		// With cash on delivery the customer pays on receipt: delivered is paid, and returned is not collected.
+		// "delivered_to_branch" doesn't count: the package is waiting at the office and hasn't been paid yet.
 		switch ev.Data.Attributes.Status {
 		case "delivered":
-			go b.avisoEntrega(shipmentID, ev.Data.Attributes.Tracking, "collected")
+			go b.deliveryNotice(shipmentID, ev.Data.Attributes.Tracking, "collected")
 		case "in_return":
-			go b.avisoEntrega(shipmentID, ev.Data.Attributes.Tracking, "failed")
+			go b.deliveryNotice(shipmentID, ev.Data.Attributes.Tracking, "failed")
 		case "last_mile":
-			go b.avisoEnRuta(shipmentID, ev.Data.Attributes.Tracking, ev.Data.Attributes.EventDescription)
+			go b.inTransitNotice(shipmentID, ev.Data.Attributes.Tracking, ev.Data.Attributes.EventDescription)
 		case "picked_up", "delivery_attempt", "exception", "delivered_to_branch":
-			go b.avisoIncidencia(shipmentID, ev.Data.Attributes.Status, ev.Data.Attributes.Tracking,
+			go b.incidentNotice(shipmentID, ev.Data.Attributes.Status, ev.Data.Attributes.Tracking,
 				ev.Data.Attributes.EventDescription, ev.Data.Attributes.TrackingURL)
 		}
 		if orderID == "" {
 			return
 		}
-		// Se responde de inmediato y la consulta a Skydropx se hace aparte.
+		// Respond right away and query Skydropx separately.
 		go b.notifyOrder(orderID, shipmentID)
 	}
 }
@@ -88,7 +88,7 @@ type webhookEvent struct {
 	} `json:"data"`
 }
 
-// notifyOrder avisa la guía si la orden del evento es una de las creadas por el bot.
+// notifyOrder announces the label if the event's order is one created by the bot.
 func (b *Bot) notifyOrder(orderID, shipmentID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -105,7 +105,7 @@ func (b *Bot) notifyOrder(orderID, shipmentID string) {
 	}
 }
 
-// validWebhookAuth acepta "HMAC <firma>" (HMAC-SHA512 en hex del cuerpo crudo) o "Bearer <token>".
+// validWebhookAuth accepts "HMAC <signature>" (hex HMAC-SHA512 of the raw body) or "Bearer <token>".
 func validWebhookAuth(header string, body []byte, secret string) bool {
 	if secret == "" {
 		return false

@@ -13,17 +13,17 @@ import (
 	"skydropx-automator/internal/domain"
 )
 
-// maxTemplatePages limita cuántas páginas de direcciones guardadas se revisan (20 por página).
+// maxTemplatePages limits how many pages of saved addresses are checked (20 per page).
 const maxTemplatePages = 5
 
-// originTemplate guarda el ID de la dirección de origen ya encontrada para no buscarla en cada orden.
+// originTemplate keeps the ID of the origin address once found so it isn't looked up on every order.
 type originTemplate struct {
 	mu sync.Mutex
 	id string
 }
 
-// OriginTemplateID devuelve el ID de la dirección de origen guardada en Skydropx (Mis direcciones).
-// Usa ORIGIN_ADDRESS_TEMPLATE_ID si está configurado; si no, busca la dirección de origen cuyo
+// OriginTemplateID returns the ID of the origin address saved in Skydropx (Mis direcciones).
+// It uses ORIGIN_ADDRESS_TEMPLATE_ID if set; otherwise it looks for the origin address whose
 // alias sea ORIGIN_ADDRESS_ALIAS (GET /api/v1/address_templates).
 func (c *Client) OriginTemplateID(ctx context.Context) (string, error) {
 	if id := strings.TrimSpace(c.cfg.OriginAddressTemplateID); id != "" {
@@ -70,25 +70,25 @@ func (c *Client) OriginTemplateID(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no se encontró en Skydropx la dirección de origen con alias %q (Mis direcciones)", alias)
 }
 
-// SaveRecipientAddress guarda la dirección del cliente en Mis direcciones de Skydropx con su nombre como alias
-// (POST /api/v1/address_templates). Si ya hay una dirección de destino con el mismo alias y calle, no la repite.
+// SaveRecipientAddress saves the customer's address in Skydropx's Mis direcciones with their name as alias
+// (POST /api/v1/address_templates). If a destination address with the same alias and street exists, it isn't repeated.
 func (c *Client) SaveRecipientAddress(ctx context.Context, data domain.ShipmentData, postal string) error {
 	if c.isMock() {
 		return ErrMockMode
 	}
-	alias := truncate(data.Nombre, 50)
-	exists, err := c.recipientTemplateExists(ctx, alias, data.Direccion)
+	alias := truncate(data.Name, 50)
+	exists, err := c.recipientTemplateExists(ctx, alias, data.Address)
 	if err != nil {
 		return err
 	}
 	if exists {
 		return nil
 	}
-	email := strings.TrimSpace(data.Correo)
+	email := strings.TrimSpace(data.Email)
 	if email == "" {
-		email = c.cfg.OriginEmail // el correo es obligatorio
+		email = c.cfg.OriginEmail // email is required
 	}
-	reference := strings.TrimSpace(data.Barrio)
+	reference := strings.TrimSpace(data.Neighborhood)
 	if reference == "" {
 		reference = "Sin referencia"
 	}
@@ -97,14 +97,14 @@ func (c *Client) SaveRecipientAddress(ctx context.Context, data domain.ShipmentD
 			"alias_name":   alias,
 			"address_type": "to",
 			"address_attributes": map[string]any{
-				"name":         truncate(data.Nombre, 30),
-				"company":      truncate(data.Nombre, 60),
-				"street1":      data.Direccion,
+				"name":         truncate(data.Name, 30),
+				"company":      truncate(data.Name, 60),
+				"street1":      data.Address,
 				"postal_code":  postal,
-				"area_level1":  data.Departamento,
-				"area_level2":  data.Ciudad,
+				"area_level1":  data.Department,
+				"area_level2":  data.City,
 				"country_code": "CO",
-				"phone":        data.Telefono,
+				"phone":        data.Phone,
 				"email":        email,
 				"reference":    truncate(reference, 40),
 			},
@@ -133,7 +133,7 @@ func (c *Client) SaveRecipientAddress(ctx context.Context, data domain.ShipmentD
 	return nil
 }
 
-// recipientTemplateExists busca en Mis direcciones una dirección de destino con el mismo alias y calle.
+// recipientTemplateExists looks in Mis direcciones for a destination address with the same alias and street.
 func (c *Client) recipientTemplateExists(ctx context.Context, alias, street string) (bool, error) {
 	for page := 1; page <= maxTemplatePages; page++ {
 		body, status, err := c.get(ctx, fmt.Sprintf("%s/api/v1/address_templates?page=%d&per_page=20", c.cfg.SkydropxBaseURL, page))

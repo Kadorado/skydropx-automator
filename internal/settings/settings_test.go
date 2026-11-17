@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestComisionPorFecha(t *testing.T) {
+func TestCommissionByDate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	s, err := Load(path, 15000)
 	if err != nil {
@@ -24,7 +24,7 @@ func TestComisionPorFecha(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := map[string]float64{
-		"2026-11-14 23:59": 15000, // antes del cambio: se respeta lo que se pagaba
+		"2026-11-14 23:59": 15000, // before the change: what was paid is respected
 		"2026-11-15 00:00": 12000,
 		"2026-11-30 18:00": 12000,
 		"2026-12-01 08:00": 18000,
@@ -35,7 +35,7 @@ func TestComisionPorFecha(t *testing.T) {
 		}
 	}
 
-	// Corregir el valor de una fecha lo reemplaza, y todo sobrevive al reinicio.
+	// Correcting a date's value replaces it, and everything survives a restart.
 	if _, err := s.SetCommission(13000, "2026-11-15"); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestVendorPayments(t *testing.T) {
 	if err := s.AddVendorPayment(VendorPayment{Date: "2026-11-17", Amount: 20000, Covered: 12000, Trackings: []string{"C"}}); err != nil {
 		t.Fatal(err)
 	}
-	s, err := Load(path, 15000) // se guarda en el archivo
+	s, err := Load(path, 15000) // it is saved to the file
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,11 +82,11 @@ func TestVendorPayments(t *testing.T) {
 	}
 }
 
-func TestPublicidadEnSaldo(t *testing.T) {
+func TestAdsInBalance(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ajustes.json")
 	s, _ := Load(path, 15000)
-	_ = s.AddVendorPayment(VendorPayment{Date: "2026-11-16", Amount: 30000, Covered: 36000}) // le faltan 6.000
-	if err := s.AddAd(AdExpense{Date: "2026-11-16", Amount: 40000}); err != nil {            // pagó el dueño: -20.000
+	_ = s.AddVendorPayment(VendorPayment{Date: "2026-11-16", Amount: 30000, Covered: 36000}) // 6.000 short
+	if err := s.AddAd(AdExpense{Date: "2026-11-16", Amount: 40000}); err != nil {            // the owner paid: -20.000
 		t.Fatal(err)
 	}
 	if err := s.AddAd(AdExpense{Date: "2026-11-17", Amount: 10000, PaidBy: "vendedor"}); err != nil { // +5.000

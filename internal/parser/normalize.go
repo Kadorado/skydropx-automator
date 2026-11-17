@@ -6,15 +6,15 @@ import (
 	"unicode"
 )
 
-// Marcas de formato de WhatsApp: *negrita*, _cursiva_, ~tachado~ y `código`.
+// WhatsApp formatting marks: *bold*, _italic_, ~strikethrough~ and `code`.
 var reWhatsAppMarks = regexp.MustCompile("[*_~`]")
 
-// Líneas decorativas (━━━, ───, ===, ---) que no llevan datos.
+// Decorative lines (━━━, ───, ===, ---) that carry no data.
 var reDecorativeLine = regexp.MustCompile(`^[\s━─═\-=_.]+$`)
 
-// normalizeWhatsApp quita el formato y los adornos de WhatsApp para que las
-// reglas de lectura vean líneas como "Receptor: NOMBRE" aunque vengan como
-// "*Receptor:* NOMBRE" o "📦 *Receptor:* NOMBRE".
+// normalizeWhatsApp strips WhatsApp formatting and decorations so the
+// parsing rules see lines like "Receptor: NOMBRE" even if they come as
+// "*Receptor:* NOMBRE" or "📦 *Receptor:* NOMBRE".
 func normalizeWhatsApp(raw string) string {
 	var out []string
 	for _, line := range strings.Split(raw, "\n") {

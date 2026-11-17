@@ -20,12 +20,12 @@ import (
 func main() {
 	cfg := config.Load()
 	client := skydropx.NewClient(cfg)
-	// Los ajustes (comisión del vendedor) se guardan junto al estado del bot, en el disco persistente.
-	ajustes, err := settings.Load(filepath.Join(filepath.Dir(cfg.BotStatePath), "settings.json"), cfg.ComisionPorDatafono)
+	// Settings (the seller's commission) are stored next to the bot state, on the persistent disk.
+	appSettings, err := settings.Load(filepath.Join(filepath.Dir(cfg.BotStatePath), "settings.json"), cfg.CommissionPerTerminal)
 	if err != nil {
 		log.Fatalf("No se pudieron leer los ajustes: %v", err)
 	}
-	apiHandler := handlers.NewAPIHandler(cfg, client, ajustes)
+	apiHandler := handlers.NewAPIHandler(cfg, client, appSettings)
 
 	mux := http.NewServeMux()
 	apiHandler.RegisterRoutes(mux)
@@ -35,16 +35,16 @@ func main() {
 	mux.HandleFunc("POST /login", guard.LoginPage)
 	mux.HandleFunc("GET /logout", guard.Logout)
 
-	// La base de clientes es opcional: si MongoDB no responde, el bot sigue funcionando sin ella.
-	var clientes *customers.Store
-	var clientesError string
+	// The customer database is optional: if MongoDB doesn't respond, the bot keeps working without it.
+	var custs *customers.Store
+	var customersErr string
 	if cfg.MongoURI != "" {
 		store, closeMongo, err := customers.OpenMongo(context.Background(), cfg.MongoURI, cfg.MongoDatabase)
 		if err != nil {
 			log.Printf("Base de clientes desactivada: %v", err)
-			clientesError = err.Error()
+			customersErr = err.Error()
 		} else {
-			clientes = store
+			custs = store
 			defer func() { _ = closeMongo(context.Background()) }()
 			log.Printf("Base de clientes activa (MongoDB, base %q)", cfg.MongoDatabase)
 		}
@@ -54,17 +54,17 @@ func main() {
 
 	if cfg.TelegramToken != "" {
 		tgBot, err := bot.New(bot.Options{
-			Token:          cfg.TelegramToken,
-			APIBase:        cfg.TelegramAPIBase,
-			AllowedChatIDs: cfg.TelegramAllowedChatIDs,
-			AdminChatIDs:   cfg.TelegramAdminChatIDs,
-			GestionChatIDs: cfg.TelegramGestionChatIDs,
-			DefaultValor:   cfg.DefaultValorUnitario,
-			StatePath:      cfg.BotStatePath,
-			CheckEvery:     time.Duration(cfg.GuiaCheckMinutes) * time.Minute,
-			Settings:       ajustes,
-			Customers:      clientes,
-			CustomersError: clientesError,
+			Token:            cfg.TelegramToken,
+			APIBase:          cfg.TelegramAPIBase,
+			AllowedChatIDs:   cfg.TelegramAllowedChatIDs,
+			AdminChatIDs:     cfg.TelegramAdminChatIDs,
+			OpsChatIDs:       cfg.TelegramOpsChatIDs,
+			DefaultUnitPrice: cfg.DefaultUnitPrice,
+			StatePath:        cfg.BotStatePath,
+			CheckEvery:       time.Duration(cfg.LabelCheckMinutes) * time.Minute,
+			Settings:         appSettings,
+			Customers:        custs,
+			CustomersError:   customersErr,
 		}, client)
 		if err != nil {
 			log.Fatalf("Bot de Telegram: %v", err)
@@ -86,7 +86,7 @@ func main() {
 		log.Println("ADVERTENCIA: APP_PASSWORD no está configurada; la app no pide inicio de sesión.")
 	}
 
-	// Servir archivos estáticos del frontend
+	// Serve the frontend's static files
 	webDir := "web"
 	if _, err := os.Stat(webDir); os.IsNotExist(err) {
 		log.Fatalf("No se encontró el directorio %s. Ejecuta el servidor desde la raíz del proyecto.", webDir)

@@ -9,9 +9,9 @@ import (
 	"skydropx-automator/internal/skydropx"
 )
 
-func TestRangoDeuda(t *testing.T) {
-	now := time.Date(2026, 11, 14, 15, 0, 0, 0, colombiaTZ) // sábado
-	casos := []struct{ args, desde, hasta string }{
+func TestDebtRange(t *testing.T) {
+	now := time.Date(2026, 11, 14, 15, 0, 0, 0, colombiaTZ) // Saturday
+	cases := []struct{ args, from, until string }{
 		{"", "2026-11-08", "2026-11-14"},
 		{" 3", "2026-11-12", "2026-11-14"},
 		{"hoy", "2026-11-14", "2026-11-14"},
@@ -21,24 +21,24 @@ func TestRangoDeuda(t *testing.T) {
 		{"2026-11-03", "2026-11-03", "2026-11-03"},
 		{"2026-11-10 2026-11-01", "2026-11-01", "2026-11-10"},
 	}
-	for _, c := range casos {
-		d, h, err := rangoDeuda(c.args, now)
+	for _, c := range cases {
+		d, h, err := debtRange(c.args, now)
 		if err != nil {
 			t.Errorf("%q: %v", c.args, err)
 			continue
 		}
-		if got := d.Format("2006-01-02") + " " + h.Format("2006-01-02"); got != c.desde+" "+c.hasta {
-			t.Errorf("%q: %s, quería %s %s", c.args, got, c.desde, c.hasta)
+		if got := d.Format("2006-01-02") + " " + h.Format("2006-01-02"); got != c.from+" "+c.until {
+			t.Errorf("%q: %s, quería %s %s", c.args, got, c.from, c.until)
 		}
 	}
-	for _, mal := range []string{"0", "100", "mañana", "2026-01-01 2026-12-31", "a b c"} {
-		if _, _, err := rangoDeuda(mal, now); err == nil {
-			t.Errorf("%q debería dar error", mal)
+	for _, bad := range []string{"0", "100", "mañana", "2026-01-01 2026-12-31", "a b c"} {
+		if _, _, err := debtRange(bad, now); err == nil {
+			t.Errorf("%q debería dar error", bad)
 		}
 	}
 }
 
-func TestDeudaTexto(t *testing.T) {
+func TestDebtText(t *testing.T) {
 	d := time.Date(2026, 11, 12, 0, 0, 0, 0, colombiaTZ)
 	h := time.Date(2026, 11, 14, 0, 0, 0, 0, colombiaTZ)
 	f := skydropx.Finance{
@@ -53,11 +53,11 @@ func TestDeudaTexto(t *testing.T) {
 			{Date: "2026-11-12T09:00:00-05:00", Tracking: "G", Status: "cancelled"},
 		},
 	}
-	estados := map[string]string{"A": "camino", "B": "oficina", "E": "novedad"}
-	msg := deudaTexto(d, h, f, estados, cuentaVendedor{
-		pagadas: map[string]string{"H": "2026-11-13"},
+	states := map[string]string{"A": "camino", "B": "oficina", "E": "novedad"}
+	msg := debtText(d, h, f, states, sellerAccount{
+		paid:    map[string]string{"H": "2026-11-13"},
 		ads:     []settings.AdExpense{{Date: "2026-11-13", Amount: 40000, PaidBy: "yo"}, {Date: "2026-11-01", Amount: 99000}},
-		saldo:   6000,
+		balance: 6000,
 	})
 	for _, want := range []string{"Del 12 nov al 14 nov · 6 pedidos = 8 datáfonos",
 		"PARA PAGARLE HOY: $42.000", "Cobrado sin pagarle: $36.000", "Más lo que le quedó debiendo: +$6.000",
@@ -75,7 +75,7 @@ func TestDeudaTexto(t *testing.T) {
 			t.Errorf("falta %q en:\n%s", want, msg)
 		}
 	}
-	if !strings.Contains(deudaTexto(d, h, skydropx.Finance{}, nil, cuentaVendedor{}), "No hay ventas") {
+	if !strings.Contains(debtText(d, h, skydropx.Finance{}, nil, sellerAccount{}), "No hay ventas") {
 		t.Error("sin envíos debe decir que no hay ventas")
 	}
 }

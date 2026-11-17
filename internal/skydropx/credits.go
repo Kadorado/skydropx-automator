@@ -6,13 +6,13 @@ import (
 	"fmt"
 )
 
-// Credits es el saldo de la cuenta de Skydropx, con el que se pagan las guías.
+// Credits is the Skydropx account balance, used to pay for labels.
 type Credits struct {
 	Balance  float64
 	Currency string
 }
 
-// Credits consulta el saldo actual de la cuenta (GET /api/v1/finance/credits).
+// Credits looks up the account's current balance (GET /api/v1/finance/credits).
 func (c *Client) Credits(ctx context.Context) (Credits, error) {
 	if c.isMock() {
 		return Credits{}, ErrMockMode

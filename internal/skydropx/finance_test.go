@@ -12,13 +12,13 @@ import (
 	"skydropx-automator/internal/config"
 )
 
-func TestSummarizeShipmentsComision(t *testing.T) {
+func TestSummarizeShipmentsCommission(t *testing.T) {
 	shipments := []financeShipment{
-		{OrderID: "o1", OnDelivery: "collected", CODAmount: 72573, Cost: 12573}, // 2 datáfonos
-		{OrderID: "o2", OnDelivery: "collected", CODAmount: 72000, Cost: 12000}, // 1 datáfono
-		{OrderID: "o3", OnDelivery: "pending", CODAmount: 135000, Cost: 15000},  // 3 datáfonos
-		{OrderID: "", OnDelivery: "pending", CODAmount: 70000, Cost: 10000},     // sin orden: se estima 1
-		{OrderID: "o5", OnDelivery: "failed", CODAmount: 70000, Cost: 10000},    // no recaudado: sin comisión
+		{OrderID: "o1", OnDelivery: "collected", CODAmount: 72573, Cost: 12573}, // 2 terminals
+		{OrderID: "o2", OnDelivery: "collected", CODAmount: 72000, Cost: 12000}, // 1 terminal
+		{OrderID: "o3", OnDelivery: "pending", CODAmount: 135000, Cost: 15000},  // 3 terminals
+		{OrderID: "", OnDelivery: "pending", CODAmount: 70000, Cost: 10000},     // no order: 1 is estimated
+		{OrderID: "o5", OnDelivery: "failed", CODAmount: 70000, Cost: 10000},    // not collected: no commission
 		{OrderID: "o6", OnDelivery: "collected", CODAmount: 99999, Cost: 9999, Cancelled: true},
 	}
 	qty := map[string]int{"o1": 2, "o2": 1, "o3": 3, "o5": 1}
@@ -39,16 +39,16 @@ func TestSummarizeShipmentsComision(t *testing.T) {
 	}
 }
 
-func TestNewPeriodYFiltro(t *testing.T) {
+func TestNewPeriodAndFilter(t *testing.T) {
 	p, err := NewPeriod("2026-11-01", "2026-11-14")
 	if err != nil {
 		t.Fatal(err)
 	}
 	list := ShipmentList{Data: []json.RawMessage{
-		json.RawMessage(`{"attributes":{"created_at":"2026-11-01T05:00:00Z","on_delivery_status":"pending"}}`), // 1 nov 00:00 en Colombia: entra
-		json.RawMessage(`{"attributes":{"created_at":"2026-11-01T04:59:00Z","on_delivery_status":"pending"}}`), // 31 oct en Colombia: no
-		json.RawMessage(`{"attributes":{"created_at":"2026-11-15T04:30:00Z","on_delivery_status":"pending"}}`), // 14 nov 23:30 en Colombia: entra
-		json.RawMessage(`{"attributes":{"created_at":"2026-11-15T05:00:00Z","on_delivery_status":"pending"}}`), // 15 nov: no
+		json.RawMessage(`{"attributes":{"created_at":"2026-11-01T05:00:00Z","on_delivery_status":"pending"}}`), // Nov 1 00:00 in Colombia: included
+		json.RawMessage(`{"attributes":{"created_at":"2026-11-01T04:59:00Z","on_delivery_status":"pending"}}`), // Oct 31 in Colombia: not included
+		json.RawMessage(`{"attributes":{"created_at":"2026-11-15T04:30:00Z","on_delivery_status":"pending"}}`), // Nov 14 23:30 in Colombia: included
+		json.RawMessage(`{"attributes":{"created_at":"2026-11-15T05:00:00Z","on_delivery_status":"pending"}}`), // Nov 15: not included
 	}}
 	if got := len(financeShipments(list, p)); got != 2 {
 		t.Fatalf("entraron %d envíos al rango, se esperaban 2", got)
@@ -62,7 +62,7 @@ func TestNewPeriodYFiltro(t *testing.T) {
 }
 
 func TestMovementCategory(t *testing.T) {
-	casos := []struct{ kind, typ, comment, want string }{
+	cases := []struct{ kind, typ, comment, want string }{
 		{"deposit", "", "Recarga de saldo", "recarga"},
 		{"withdrawal", "Shipment", "Guía 240065845604", "guia"},
 		{"withdrawal", "Shipment", "Protección Plus", "proteccion"},
@@ -72,14 +72,14 @@ func TestMovementCategory(t *testing.T) {
 		{"withdrawal", "", "Fee Mercado Pago #187118512635", "fee_recarga"},
 		{"refund", "Shipment", "Protección Plus", "devolucion"},
 	}
-	for _, c := range casos {
+	for _, c := range cases {
 		if got := movementCategory(c.kind, c.typ, c.comment); got != c.want {
 			t.Errorf("movementCategory(%q,%q,%q) = %q, want %q", c.kind, c.typ, c.comment, got, c.want)
 		}
 	}
 }
 
-func TestFinanceCompleto(t *testing.T) {
+func TestFullFinance(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"access_token":"tok","expires_in":7200}`)
@@ -138,17 +138,17 @@ func TestFinanceCompleto(t *testing.T) {
 	}
 }
 
-func TestPerShipmentJuntaDevolucionesPorGuia(t *testing.T) {
+func TestPerShipmentGroupsReturnsByLabel(t *testing.T) {
 	shipments := []financeShipment{
 		{Date: "2026-11-02T10:00:00Z", Tracking: "G1", Customer: "Ana", OnDelivery: "collected", CODAmount: 72000, Cost: 12000},
 		{Date: "2026-11-03T10:00:00Z", Tracking: "G2", Customer: "Luis", OnDelivery: "pending", CODAmount: 70000, Cost: 10000},
 		{Date: "2026-11-01T10:00:00Z", Tracking: "G3", OnDelivery: "failed", CODAmount: 70000, Cost: 10000},
 	}
 	movs := []Movement{
-		{Date: "2026-11-02T10:00:00Z", Kind: "withdrawal", Category: "guia", Amount: 12000, Tracking: "G1"}, // cobro de la guía: no es devolución
+		{Date: "2026-11-02T10:00:00Z", Kind: "withdrawal", Category: "guia", Amount: 12000, Tracking: "G1"}, // label charge: not a refund
 		{Date: "2026-11-02T10:00:00Z", Kind: "withdrawal", Category: "servicio", Amount: 300, Tracking: "G1"},
 		{Date: "2026-11-09T10:00:00Z", Kind: "refund", Amount: 12000, Tracking: "G1"},
-		{Date: "2026-11-05T10:00:00Z", Kind: "deposit", Amount: 50000}, // recarga sin guía
+		{Date: "2026-11-05T10:00:00Z", Kind: "deposit", Amount: 50000}, // top-up without a label
 	}
 	extras := []ExtraCharge{{Date: "2026-11-08", Tracking: "G3", Amount: 9000}}
 
@@ -171,7 +171,7 @@ func TestPerShipmentJuntaDevolucionesPorGuia(t *testing.T) {
 	}
 }
 
-func TestFinanceShipmentsNombreYGuia(t *testing.T) {
+func TestFinanceShipmentsNameAndLabel(t *testing.T) {
 	p, _ := NewPeriod("2026-11-01", "2026-11-14")
 	list := ShipmentList{
 		Data: []json.RawMessage{json.RawMessage(`{"relationships":{"address_to":{"data":{"id":"a1","type":"address"}}},
@@ -184,11 +184,11 @@ func TestFinanceShipmentsNombreYGuia(t *testing.T) {
 	}
 }
 
-func TestEnviosSinGuiaQuedanFuera(t *testing.T) {
+func TestShipmentsWithoutLabelAreLeftOut(t *testing.T) {
 	p, _ := NewPeriod("2026-11-13", "2026-11-13")
 	list := ShipmentList{Data: []json.RawMessage{
 		json.RawMessage(`{"attributes":{"created_at":"2026-11-13T15:00:00Z","master_tracking_number":"240065822548","on_delivery_status":"pending","total":"16532"}}`),
-		json.RawMessage(`{"attributes":{"created_at":"2026-11-13T14:50:00Z","master_tracking_number":null,"total":"16532"}}`), // el intento que falló
+		json.RawMessage(`{"attributes":{"created_at":"2026-11-13T14:50:00Z","master_tracking_number":null,"total":"16532"}}`), // the attempt that failed
 	}}
 	got := withLabel(financeShipments(list, p))
 	if len(got) != 1 || got[0].Tracking != "240065822548" {
@@ -196,35 +196,35 @@ func TestEnviosSinGuiaQuedanFuera(t *testing.T) {
 	}
 }
 
-func TestCustomerPaysConYSinEnvioIncluido(t *testing.T) {
-	// Manuel: Skydropx reporta 72.573, que ya trae el envío (60.000 + 12.573).
+func TestCustomerPaysWithAndWithoutShippingIncluded(t *testing.T) {
+	// Manuel: Skydropx reports 72.573, which already includes shipping (60.000 + 12.573).
 	manuel := financeShipment{Product: 60000, CODAmount: 72573, Cost: 12266}
 	if got := manuel.customerPays(); got != 72573 {
 		t.Fatalf("Manuel paga %v, se esperaba 72573", got)
 	}
-	// Aracely: Skydropx reporta 120.000, solo el producto; el cliente paga además el envío.
+	// Aracely: Skydropx reports 120.000, only the product; the customer also pays shipping.
 	aracely := financeShipment{Product: 120000, CODAmount: 120000, Cost: 16532}
 	if got := aracely.customerPays(); got != 136532 {
 		t.Fatalf("Aracely paga %v, se esperaba 136532", got)
 	}
-	// Sin el producto de la orden se confía en lo reportado.
+	// Without the order's product, the reported amount is trusted.
 	if got := (financeShipment{CODAmount: 72573, Cost: 12266}).customerPays(); got != 72573 {
 		t.Fatalf("sin producto: %v", got)
 	}
 }
 
-func TestComisionSegunFechaDelEnvio(t *testing.T) {
-	cambio, _ := time.ParseInLocation("2006-01-02", "2026-11-15", colombia)
+func TestCommissionByShipmentDate(t *testing.T) {
+	change, _ := time.ParseInLocation("2006-01-02", "2026-11-15", colombia)
 	rate := func(t time.Time) float64 {
-		if t.Before(cambio) {
+		if t.Before(change) {
 			return 15000
 		}
 		return 12000
 	}
 	shipments := []financeShipment{
-		{Date: "2026-11-14T20:00:00Z", Tracking: "G1", OrderID: "o1", OnDelivery: "collected"}, // 2 datáfonos a 15.000
-		{Date: "2026-11-16T15:00:00Z", Tracking: "G2", OrderID: "o2", OnDelivery: "collected"}, // 1 datáfono a 12.000
-		{Date: "2026-11-16T16:00:00Z", Tracking: "G3", OrderID: "o3", OnDelivery: "pending"},   // 1 datáfono a 12.000
+		{Date: "2026-11-14T20:00:00Z", Tracking: "G1", OrderID: "o1", OnDelivery: "collected"}, // 2 terminals at 15.000
+		{Date: "2026-11-16T15:00:00Z", Tracking: "G2", OrderID: "o2", OnDelivery: "collected"}, // 1 terminal at 12.000
+		{Date: "2026-11-16T16:00:00Z", Tracking: "G3", OrderID: "o3", OnDelivery: "pending"},   // 1 terminal at 12.000
 	}
 	f := summarizeShipments(shipments, map[string]int{"o1": 2, "o2": 1, "o3": 1}, rate)
 	if f.Commission.PaidAmount != 42000 || f.Commission.PendingAmount != 12000 {
@@ -232,7 +232,7 @@ func TestComisionSegunFechaDelEnvio(t *testing.T) {
 	}
 }
 
-func TestProblemaKind(t *testing.T) {
+func TestProblemKind(t *testing.T) {
 	cases := []struct{ onDelivery, raw, event, want string }{
 		{"pending", "delivered", "Entregado", ""},
 		{"failed", "", "", "devolucion"},
@@ -244,7 +244,7 @@ func TestProblemaKind(t *testing.T) {
 		{"pending", "in_transit", "En camino", ""},
 	}
 	for _, c := range cases {
-		if got := problemaKind(c.onDelivery, c.raw, c.event); got != c.want {
+		if got := problemKind(c.onDelivery, c.raw, c.event); got != c.want {
 			t.Errorf("problemaKind(%q,%q,%q) = %q, se esperaba %q", c.onDelivery, c.raw, c.event, got, c.want)
 		}
 	}

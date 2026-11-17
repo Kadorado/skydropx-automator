@@ -78,24 +78,24 @@ func (b *Bot) saveCustomer(ctx context.Context, u UnsavedCustomer) error {
 	defer cancel()
 	data := u.Data
 	in := customers.Customer{
-		Name: data.Nombre, DocumentID: data.Documento, Phone: data.Telefono, Email: data.Correo,
-		Department: data.Departamento, City: data.Ciudad, Neighborhood: data.Barrio, Address: data.Direccion,
-		Source: data.Fuente,
+		Name: data.Name, DocumentID: data.Document, Phone: data.Phone, Email: data.Email,
+		Department: data.Department, City: data.City, Neighborhood: data.Neighborhood, Address: data.Address,
+		Source: data.Source,
 	}
-	if data.AutorizaDatos == "si" {
+	if data.DataConsent == "si" {
 		in.Consent = customers.Consent{Given: true, Date: u.At, Evidence: `Pedido por Telegram con "Autoriza datos: SÍ"`, RecordedBy: u.Sender}
 	}
-	units := data.Cantidad
+	units := data.Quantity
 	if units < 1 {
 		units = 1
 	}
-	o := customers.Order{Date: u.At, Units: units, UnitPrice: data.ValorUnitario, CreatedBy: u.Sender}
+	o := customers.Order{Date: u.At, Units: units, UnitPrice: data.UnitPrice, CreatedBy: u.Sender}
 	_, err := b.opts.Customers.RecordOrder(ctx, in, o)
 	return err
 }
 
 // recordCustomer saves the customer of a new order. Success is silent; on failure the customer is kept
-// on disk and the gestión group is told what happened, with a button to retry. The order never waits on it.
+// on disk and the ops group is told what happened, with a button to retry. The order never waits on it.
 func (b *Bot) recordCustomer(ctx context.Context, data domain.ShipmentData, orderID, sender string) {
 	if b.opts.Customers == nil && b.opts.CustomersError == "" {
 		return // the customer list isn't configured
@@ -105,11 +105,11 @@ func (b *Bot) recordCustomer(ctx context.Context, data domain.ShipmentData, orde
 	if err == nil {
 		return
 	}
-	log.Printf("bot: couldn't save customer %q: %v", data.Nombre, err)
+	log.Printf("bot: couldn't save customer %q: %v", data.Name, err)
 	if err := b.st.addUnsaved(u); err != nil {
-		log.Printf("bot: couldn't keep the unsaved customer %q: %v", data.Nombre, err)
+		log.Printf("bot: couldn't keep the unsaved customer %q: %v", data.Name, err)
 	}
-	for _, id := range b.gestionChats() {
+	for _, id := range b.opsChats() {
 		if _, err := b.tg.SendMessageWithButtons(ctx, id, unsavedText(u, b.failureReason(err)), retryCustomerButton(orderID)); err != nil {
 			log.Printf("bot: couldn't send the unsaved customer notice: %v", err)
 		}
@@ -117,7 +117,7 @@ func (b *Bot) recordCustomer(ctx context.Context, data domain.ShipmentData, orde
 }
 
 func retryCustomerButton(orderID string) [][]telegram.Button {
-	return [][]telegram.Button{telegram.Row(telegram.Button{Text: "🔄 Reintentar", Data: actGuardarCliente + ":" + orderID})}
+	return [][]telegram.Button{telegram.Row(telegram.Button{Text: "🔄 Reintentar", Data: actSaveCustomer + ":" + orderID})}
 }
 
 // failureReason explains a failure in plain words, without connection strings.
@@ -156,7 +156,7 @@ El pedido sigue normal; solo falta guardar al cliente. El bot lo tiene apartado,
 <b>Qué hacer</b>
 1. Toca <b>🔄 Reintentar</b> en unos minutos.
 2. Si sigue fallando: en Atlas revisa que el cluster esté activo y que Network Access tenga <code>0.0.0.0/0</code>; luego reinicia el servicio en Render (Manual Deploy). Al arrancar conectado, el bot guarda solo los clientes apartados.`,
-		html.EscapeString(u.Data.Nombre), html.EscapeString(u.Data.Telefono), html.EscapeString(reason))
+		html.EscapeString(u.Data.Name), html.EscapeString(u.Data.Phone), html.EscapeString(reason))
 }
 
 // retryCustomer handles the 🔄 Reintentar button of an unsaved customer.
@@ -169,24 +169,24 @@ func (b *Bot) retryCustomer(ctx context.Context, callbackID string, chatID, msgI
 	}
 	if err := b.saveCustomer(ctx, u); err != nil {
 		reason := b.failureReason(err)
-		log.Printf("bot: retry couldn't save customer %q: %v", u.Data.Nombre, err)
+		log.Printf("bot: retry couldn't save customer %q: %v", u.Data.Name, err)
 		_ = b.tg.AnswerCallback(ctx, callbackID, "Sigue fallando.")
-		_ = b.tg.EditMessage(ctx, chatID, msgID, unsavedText(u, reason)+"\n\n<i>Último intento: "+fechaHora(time.Now())+"</i>", retryCustomerButton(orderID))
+		_ = b.tg.EditMessage(ctx, chatID, msgID, unsavedText(u, reason)+"\n\n<i>Último intento: "+dateTime(time.Now())+"</i>", retryCustomerButton(orderID))
 		return
 	}
 	if err := b.st.removeUnsaved(orderID); err != nil {
-		log.Printf("bot: couldn't forget the saved customer %q: %v", u.Data.Nombre, err)
+		log.Printf("bot: couldn't forget the saved customer %q: %v", u.Data.Name, err)
 	}
 	_ = b.tg.AnswerCallback(ctx, callbackID, "Guardado.")
-	_ = b.tg.EditMessage(ctx, chatID, msgID, "✅ <b>"+html.EscapeString(u.Data.Nombre)+"</b> quedó guardado en la base.", nil)
+	_ = b.tg.EditMessage(ctx, chatID, msgID, "✅ <b>"+html.EscapeString(u.Data.Name)+"</b> quedó guardado en la base.", nil)
 }
 
-// customersAtStartup warns the gestión group if MongoDB didn't connect, and otherwise saves the customers
+// customersAtStartup warns the ops group if MongoDB didn't connect, and otherwise saves the customers
 // left aside while it was failing.
 func (b *Bot) customersAtStartup(ctx context.Context) {
 	if b.opts.Customers == nil {
 		if b.opts.CustomersError != "" {
-			b.sayGestion(ctx, "⚠️ <b>La base de clientes no se conectó</b>\n❓ Motivo: "+html.EscapeString(sanitizeReason(b.opts.CustomersError))+
+			b.sayOps(ctx, "⚠️ <b>La base de clientes no se conectó</b>\n❓ Motivo: "+html.EscapeString(sanitizeReason(b.opts.CustomersError))+
 				"\n\nLos pedidos funcionan normal, pero sus clientes quedan apartados hasta que la base conecte.\n\n<b>Qué hacer</b>\nEn Atlas revisa que el cluster esté activo y que Network Access tenga <code>0.0.0.0/0</code>; en Render revisa que <code>MONGODB_URI</code> esté bien copiada y reinicia el servicio (Manual Deploy).")
 		}
 		return
@@ -198,12 +198,12 @@ func (b *Bot) customersAtStartup(ctx context.Context) {
 	saved, failed := 0, 0
 	for _, u := range pending {
 		if err := b.saveCustomer(ctx, u); err != nil {
-			log.Printf("bot: startup couldn't save customer %q: %v", u.Data.Nombre, err)
+			log.Printf("bot: startup couldn't save customer %q: %v", u.Data.Name, err)
 			failed++
 			continue
 		}
 		if err := b.st.removeUnsaved(u.OrderID); err != nil {
-			log.Printf("bot: couldn't forget the saved customer %q: %v", u.Data.Nombre, err)
+			log.Printf("bot: couldn't forget the saved customer %q: %v", u.Data.Name, err)
 		}
 		saved++
 	}
@@ -211,7 +211,7 @@ func (b *Bot) customersAtStartup(ctx context.Context) {
 	if failed > 0 {
 		msg += fmt.Sprintf("\n⚠️ %d siguen sin guardarse: usa el botón 🔄 Reintentar de su aviso.", failed)
 	}
-	b.sayGestion(ctx, msg)
+	b.sayOps(ctx, msg)
 }
 
 // notConnectedText explains why the customer commands don't work.
@@ -223,13 +223,13 @@ func (b *Bot) notConnectedText() string {
 	return "La base de clientes no está configurada: falta <code>MONGODB_URI</code> en Render."
 }
 
-func (b *Bot) sayGestion(ctx context.Context, msg string) {
-	for _, id := range b.gestionChats() {
+func (b *Bot) sayOps(ctx context.Context, msg string) {
+	for _, id := range b.opsChats() {
 		b.say(ctx, id, msg)
 	}
 }
 
-const ayudaClientes = `<code>/clientes</code> → resumen de la base y el archivo para Excel
+const helpCustomers = `<code>/clientes</code> → resumen de la base y el archivo para Excel
 <code>/clientes migrar</code> → traer una vez los clientes de los envíos anteriores en Skydropx
 <code>/clientes respaldo</code> → copia completa de la base (también llega sola cada lunes)
 <code>/autoriza 3001234567 respondió SÍ por WhatsApp</code> → registrar que el cliente autorizó (cédula o teléfono)
@@ -284,7 +284,7 @@ func customersSummaryText(st customers.Stats) string {
 	b.WriteString("👥 <b>BASE DE CLIENTES</b>\n\n")
 	if st.Customers == 0 {
 		b.WriteString("Todavía no hay clientes. Se guardan solos con cada pedido nuevo, y con <code>/clientes migrar</code> traes los de los envíos anteriores en Skydropx.\n\n")
-		b.WriteString(ayudaClientes)
+		b.WriteString(helpCustomers)
 		return b.String()
 	}
 	fmt.Fprintf(&b, "👤 Clientes: <b>%d</b> · 📦 Pedidos: %d\n", st.Customers, st.Orders)
@@ -338,7 +338,7 @@ func topCounts(m map[string]int, max int) []count {
 func (b *Bot) migrateCustomers(ctx context.Context, chatID int64) {
 	since := b.opts.Customers.Since().In(colombiaTZ)
 	b.say(ctx, chatID, fmt.Sprintf("⏳ Trayendo los clientes de los envíos en Skydropx anteriores al %s. Puede tardar unos minutos…",
-		fechaHora(since)))
+		dateTime(since)))
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	recipients, truncated, err := b.sky.Recipients(ctx, migrateMaxPages)
@@ -383,7 +383,7 @@ func migrationText(r customers.MigrationResult, since time.Time, truncated bool)
 		fmt.Fprintf(&b, "♻️ Ya estaban migrados: %d\n", r.Repeated)
 	}
 	if r.AfterSince > 0 {
-		fmt.Fprintf(&b, "🤖 Del %s en adelante (ya los guardó el bot): %d\n", fechaHora(since), r.AfterSince)
+		fmt.Fprintf(&b, "🤖 Del %s en adelante (ya los guardó el bot): %d\n", dateTime(since), r.AfterSince)
 	}
 	if r.NoKeys > 0 {
 		fmt.Fprintf(&b, "⚠️ Sin cédula ni teléfono (no se guardaron): %d\n", r.NoKeys)
@@ -395,8 +395,8 @@ func migrationText(r customers.MigrationResult, since time.Time, truncated bool)
 	return b.String()
 }
 
-// fechaHora formats a moment in Colombia, e.g. "lun 16 nov 6:45 p. m.".
-func fechaHora(t time.Time) string {
+// dateTime formats a moment in Colombia, e.g. "lun 16 nov 6:45 p. m.".
+func dateTime(t time.Time) string {
 	t = t.In(colombiaTZ)
 	ampm := "a. m."
 	if t.Hour() >= 12 {
@@ -406,7 +406,7 @@ func fechaHora(t time.Time) string {
 	if h == 0 {
 		h = 12
 	}
-	return fmt.Sprintf("%s %d:%02d %s", fechaCorta(t.Format("2006-01-02")), h, t.Minute(), ampm)
+	return fmt.Sprintf("%s %d:%02d %s", shortDate(t.Format("2006-01-02")), h, t.Minute(), ampm)
 }
 
 // consentCommand handles /autoriza <document or phone> [how]: the customer authorized the use of their data.
@@ -474,7 +474,7 @@ func (s *State) backupDue(day string) (bool, error) {
 	return true, s.save()
 }
 
-// backupIfDue sends the weekly backup to the gestión group on Monday mornings. A failure is reported:
+// backupIfDue sends the weekly backup to the ops group on Monday mornings. A failure is reported:
 // a backup that silently stops is worse than none.
 func (b *Bot) backupIfDue(ctx context.Context, now time.Time) {
 	if b.opts.Customers == nil || now.Weekday() != time.Monday || now.Hour() < backupHour {
@@ -483,7 +483,7 @@ func (b *Bot) backupIfDue(ctx context.Context, now time.Time) {
 	if ok, _ := b.st.backupDue(now.Format("2006-01-02")); !ok {
 		return
 	}
-	for _, id := range b.gestionChats() {
+	for _, id := range b.opsChats() {
 		if err := b.sendBackup(ctx, id); err != nil {
 			log.Printf("bot: weekly customer backup failed: %v", err)
 			b.say(ctx, id, "⚠️ <b>No se pudo hacer el respaldo semanal de clientes</b>\n❓ Motivo: "+html.EscapeString(sanitizeReason(err.Error()))+
@@ -534,7 +534,7 @@ func isRestoreCommand(m *telegram.Message) bool {
 // restoreCommand puts back the customers of a backup file that are missing from the list.
 func (b *Bot) restoreCommand(ctx context.Context, m *telegram.Message) {
 	chatID := m.Chat.ID
-	if !b.isGestion(chatID) {
+	if !b.isOps(chatID) {
 		b.say(ctx, chatID, "Este comando solo funciona en el grupo de gestión.")
 		return
 	}
@@ -574,7 +574,7 @@ func (b *Bot) restoreCommand(ctx context.Context, m *telegram.Message) {
 func restoreText(r customers.RestoreResult, createdAt time.Time) string {
 	var b strings.Builder
 	b.WriteString("✅ <b>RESTAURACIÓN TERMINADA</b>\n\n")
-	fmt.Fprintf(&b, "🗄️ Respaldo del %s: %d clientes\n", fechaHora(createdAt), r.InBackup)
+	fmt.Fprintf(&b, "🗄️ Respaldo del %s: %d clientes\n", dateTime(createdAt), r.InBackup)
 	fmt.Fprintf(&b, "♻️ Recuperados: <b>%d</b>\n", r.Restored)
 	fmt.Fprintf(&b, "✔️ Ya estaban (no se tocaron): %d\n", r.AlreadyThere)
 	if r.Conflicts > 0 {

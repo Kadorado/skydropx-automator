@@ -26,15 +26,15 @@ func WriteCSV(w io.Writer, list []Customer) error {
 		return t.In(colombia).Format("2006-01-02")
 	}
 	for _, c := range list {
-		autoriza, baja := "no", ""
+		consents, optedOutCount := "no", ""
 		if c.Consent.Given {
-			autoriza = "si"
+			consents = "si"
 		}
 		if c.OptOutAt != nil {
-			baja = day(*c.OptOutAt)
+			optedOutCount = day(*c.OptOutAt)
 		}
 		_ = cw.Write([]string{c.Name, c.DocumentID, c.Phone, c.Email, c.Department, c.City, c.Neighborhood, c.Address,
-			autoriza, day(c.Consent.Date), c.Consent.Evidence, baja, fmt.Sprint(len(c.Orders)),
+			consents, day(c.Consent.Date), c.Consent.Evidence, optedOutCount, fmt.Sprint(len(c.Orders)),
 			day(c.FirstOrderAt), day(c.LastOrderAt), c.Source})
 	}
 	cw.Flush()

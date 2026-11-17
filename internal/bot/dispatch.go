@@ -32,7 +32,7 @@ func (s *State) dispatchReminderDue(day string) (bool, error) {
 	return true, s.save()
 }
 
-// dispatchReminderIfDue tells the gestión group, on workday mornings before the office closes, which
+// dispatchReminderIfDue tells the ops group, on workday mornings before the office closes, which
 // labels still have to be taken to the carrier. Nothing pending, nothing said.
 func (b *Bot) dispatchReminderIfDue(ctx context.Context, now time.Time) {
 	if now.Hour() < morningHour || !workdays.IsWorkday(now) || !now.Before(workdays.Closing(now)) {
@@ -47,11 +47,11 @@ func (b *Bot) dispatchReminderIfDue(ctx context.Context, now time.Time) {
 	}
 	if err != nil {
 		log.Printf("bot: couldn't check what is left to dispatch: %v", err)
-		b.sayGestion(ctx, "⚠️ No pude revisar qué falta por despachar: "+html.EscapeString(err.Error())+"\nRevísalo con /despachos más tarde.")
+		b.sayOps(ctx, "⚠️ No pude revisar qué falta por despachar: "+html.EscapeString(err.Error())+"\nRevísalo con /despachos más tarde.")
 		return
 	}
 	if len(list) > 0 {
-		b.sayGestion(ctx, dispatchText(list, now))
+		b.sayOps(ctx, dispatchText(list, now))
 	}
 }
 
@@ -101,7 +101,7 @@ func dispatchText(list []skydropx.Undispatched, now time.Time) string {
 		if place != "" {
 			fmt.Fprintf(&b, " — %s", html.EscapeString(place))
 		}
-		fmt.Fprintf(&b, "\n   Guía <code>%s</code> · creada %s (%s)", html.EscapeString(u.Tracking), fechaHora(u.CreatedAt), daysAgo(u.CreatedAt, now))
+		fmt.Fprintf(&b, "\n   Guía <code>%s</code> · creada %s (%s)", html.EscapeString(u.Tracking), dateTime(u.CreatedAt), daysAgo(u.CreatedAt, now))
 		if u.Unknown {
 			b.WriteString("\n   ⚠️ No pude revisar el rastreo: puede que ya esté despachada.")
 		}
@@ -114,7 +114,7 @@ func dispatchText(list []skydropx.Undispatched, now time.Time) string {
 // officeLine says until when the office is open today or, if it's closed, the next day it opens.
 func officeLine(now time.Time) string {
 	if closing := workdays.Closing(now); !closing.IsZero() && now.Before(closing) {
-		return "🕕 Hoy la oficina atiende hasta las " + horaCorta(closing)
+		return "🕕 Hoy la oficina atiende hasta las " + shortTime(closing)
 	}
 	next := workdays.NextWorkday(now)
 	why := "ya cerró"
@@ -125,11 +125,11 @@ func officeLine(now time.Time) string {
 		why = "no abre hoy (domingo)"
 	}
 	return fmt.Sprintf("🔒 La oficina %s. Próximo día: %s, hasta las %s", why,
-		fechaCorta(next.Format("2006-01-02")), horaCorta(workdays.Closing(next)))
+		shortDate(next.Format("2006-01-02")), shortTime(workdays.Closing(next)))
 }
 
-// horaCorta formats a time of day, e.g. "6:30 p. m." or "5 p. m.".
-func horaCorta(t time.Time) string {
+// shortTime formats a time of day, e.g. "6:30 p. m." or "5 p. m.".
+func shortTime(t time.Time) string {
 	t = t.In(colombiaTZ)
 	ampm := "a. m."
 	if t.Hour() >= 12 {
@@ -145,7 +145,7 @@ func horaCorta(t time.Time) string {
 	return fmt.Sprintf("%d:%02d %s", h, t.Minute(), ampm)
 }
 
-// daysAgo says how long ago a day was, in calendar days of Colombia: "hoy", "ayer", "hace 3 días".
+// daysAgo says how long ago a day was, in Colombia calendar days: "hoy", "ayer", "hace 3 días".
 func daysAgo(t, now time.Time) string {
 	day := func(x time.Time) time.Time {
 		x = x.In(colombiaTZ)

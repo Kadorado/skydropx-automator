@@ -51,7 +51,7 @@ func TestOfficeLine(t *testing.T) {
 func TestDispatchReminderSchedule(t *testing.T) {
 	b, f := newTestBot(t)
 	ctx := context.Background()
-	b.opts.GestionChatIDs = []int64{-100}
+	b.opts.OpsChatIDs = []int64{-100}
 	created := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
 	f.shipmentList = `{"data":[
 		{"id":"d1","attributes":{"created_at":"` + created + `","master_tracking_number":"DSP-WAITING","carrier_name":"interrapidisimo"},"relationships":{"address_to":{"data":{"id":"a1"}}}},
@@ -84,7 +84,7 @@ func TestDispatchReminderSchedule(t *testing.T) {
 
 func TestDispatchReminderSilentWhenAllDispatched(t *testing.T) {
 	b, f := newTestBot(t)
-	b.opts.GestionChatIDs = []int64{-100}
+	b.opts.OpsChatIDs = []int64{-100}
 	created := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
 	f.shipmentList = `{"data":[{"id":"d3","attributes":{"created_at":"` + created + `","master_tracking_number":"DSP-ALL-SENT"}}],"meta":{"total_pages":1}}`
 	f.tracking = map[string]string{"DSP-ALL-SENT": "in_transit"}

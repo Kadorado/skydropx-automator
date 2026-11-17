@@ -7,7 +7,7 @@ import (
 	"skydropx-automator/internal/domain"
 )
 
-// handleValidateAddress valida la cobertura de la dirección antes de crear la orden (botón "Validar dirección").
+// handleValidateAddress checks address coverage before creating the order ("Validar dirección" button).
 func (h *APIHandler) handleValidateAddress(w http.ResponseWriter, r *http.Request) {
 	var req domain.CreateShipmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

@@ -1,4 +1,4 @@
-// Package telegram es un cliente mínimo de la API de bots de Telegram (long polling, mensajes con botones y archivos).
+// Package telegram is a minimal client for the Telegram Bot API (long polling, messages with buttons and files).
 package telegram
 
 import (
@@ -47,7 +47,7 @@ type Document struct {
 // MaxDownloadSize is the largest file a bot can download from Telegram (20 MB).
 const MaxDownloadSize = 20 << 20
 
-// CallbackQuery llega cuando alguien toca un botón de un mensaje del bot.
+// CallbackQuery arrives when someone taps a button on a bot message.
 type CallbackQuery struct {
 	ID      string   `json:"id"`
 	From    *User    `json:"from"`
@@ -61,13 +61,13 @@ type Update struct {
 	CallbackQuery *CallbackQuery `json:"callback_query"`
 }
 
-// Button es un botón bajo el mensaje; Data vuelve en CallbackQuery.Data (máximo 64 bytes).
+// Button is a button under the message; Data comes back in CallbackQuery.Data (64 bytes max).
 type Button struct {
 	Text string `json:"text"`
 	Data string `json:"callback_data"`
 }
 
-// Row arma una fila de botones.
+// Row builds a row of buttons.
 func Row(buttons ...Button) []Button { return buttons }
 
 type Client struct {
@@ -76,7 +76,7 @@ type Client struct {
 	http  *http.Client
 }
 
-// New crea el cliente. base puede cambiarse para pruebas; vacío usa la API oficial.
+// New creates the client. base can be changed for tests; empty uses the official API.
 func New(token, base string) *Client {
 	if base == "" {
 		base = defaultBase
@@ -84,7 +84,7 @@ func New(token, base string) *Client {
 	return &Client{
 		token: token,
 		base:  strings.TrimRight(base, "/"),
-		// Mayor que el timeout del long polling (25 s).
+		// Longer than the long polling timeout (25 s).
 		http: &http.Client{Timeout: 40 * time.Second},
 	}
 }
@@ -93,7 +93,7 @@ func (c *Client) url(method string) string {
 	return fmt.Sprintf("%s/bot%s/%s", c.base, c.token, method)
 }
 
-// GetUpdates espera hasta 25 s por mensajes nuevos a partir de offset.
+// GetUpdates waits up to 25 s for new messages starting at offset.
 func (c *Client) GetUpdates(ctx context.Context, offset int64) ([]Update, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		fmt.Sprintf("%s?offset=%d&timeout=25&allowed_updates=%s", c.url("getUpdates"), offset, `["message","callback_query"]`), nil)
@@ -119,13 +119,13 @@ func (c *Client) GetUpdates(ctx context.Context, offset int64) ([]Update, error)
 	return out.Result, nil
 }
 
-// SendMessage envía texto en HTML a un chat.
+// SendMessage sends HTML text to a chat.
 func (c *Client) SendMessage(ctx context.Context, chatID int64, html string) error {
 	_, err := c.SendMessageWithButtons(ctx, chatID, html, nil)
 	return err
 }
 
-// SendMessageWithButtons envía texto en HTML con filas de botones y devuelve el ID del mensaje.
+// SendMessageWithButtons sends HTML text with rows of buttons and returns the message ID.
 func (c *Client) SendMessageWithButtons(ctx context.Context, chatID int64, html string, rows [][]Button) (int64, error) {
 	payload := map[string]any{
 		"chat_id":                  chatID,
@@ -143,7 +143,7 @@ func (c *Client) SendMessageWithButtons(ctx context.Context, chatID int64, html 
 	return msg.MessageID, nil
 }
 
-// EditMessage reemplaza el texto y los botones de un mensaje ya enviado (rows vacío quita los botones).
+// EditMessage replaces the text and buttons of an already sent message (empty rows removes the buttons).
 func (c *Client) EditMessage(ctx context.Context, chatID, messageID int64, html string, rows [][]Button) error {
 	if rows == nil {
 		rows = [][]Button{}
@@ -158,7 +158,7 @@ func (c *Client) EditMessage(ctx context.Context, chatID, messageID int64, html 
 	}, nil)
 }
 
-// AnswerCallback quita el "cargando" del botón tocado; text aparece como aviso breve si no está vacío.
+// AnswerCallback clears the "loading" state of the tapped button; text shows as a brief notice if not empty.
 func (c *Client) AnswerCallback(ctx context.Context, callbackID, text string) error {
 	return c.call(ctx, "answerCallbackQuery", map[string]any{
 		"callback_query_id": callbackID,
@@ -166,14 +166,14 @@ func (c *Client) AnswerCallback(ctx context.Context, callbackID, text string) er
 	}, nil)
 }
 
-// SendDocument envía un archivo (por ejemplo, el PDF de las guías) con un texto opcional en HTML.
-// Command es un comando del menú que Telegram muestra al escribir "/".
+// SendDocument sends a file (for example, the labels PDF) with optional HTML text.
+// Command is a menu command Telegram shows when typing "/".
 type Command struct {
 	Command     string `json:"command"`
 	Description string `json:"description"`
 }
 
-// SetChatCommands fija el menú de comandos de un chat (grupo o privado) en particular.
+// SetChatCommands sets the command menu of a specific chat (group or private).
 func (c *Client) SetChatCommands(ctx context.Context, chatID int64, cmds []Command) error {
 	payload := map[string]any{
 		"commands": cmds,
@@ -241,7 +241,7 @@ func (c *Client) DownloadFile(ctx context.Context, fileID string) ([]byte, error
 	return data, nil
 }
 
-// call hace un POST JSON a un método de la API y decodifica "result" en out (si no es nil).
+// call POSTs JSON to an API method and decodes "result" into out (if not nil).
 func (c *Client) call(ctx context.Context, method string, payload any, out any) error {
 	data, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(method), bytes.NewReader(data))

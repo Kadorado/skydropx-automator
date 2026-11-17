@@ -21,19 +21,19 @@ import (
 	"skydropx-automator/internal/telegram"
 )
 
-// fakeAPIs simula Telegram y Skydropx en un solo servidor y registra lo que el bot envía.
+// fakeAPIs simulates Telegram and Skydropx in a single server and records what the bot sends.
 type fakeAPIs struct {
 	mu           sync.Mutex
-	edits        []string // textos de editMessageText
-	buttons      []string // datos de los botones del último mensaje editado
-	shipments    int      // veces que se creó un envío
-	document     []byte   // PDF enviado con sendDocument
-	alias        []string // alias de las direcciones guardadas
-	saldo        float64  // saldo que devuelve /finance/credits
-	sinSaldo     bool     // si es true, crear el envío responde "Fondos insuficientes"
+	edits        []string // editMessageText texts
+	buttons      []string // button data of the last edited message
+	shipments    int      // times a shipment was created
+	document     []byte   // PDF sent with sendDocument
+	alias        []string // aliases of the saved addresses
+	balance      float64  // balance returned by /finance/credits
+	noBalance    bool     // if true, creating the shipment answers "Fondos insuficientes"
 	caption      string
 	srvURL       string
-	messages     []string          // textos de sendMessage
+	messages     []string          // sendMessage texts
 	fileData     []byte            // file that getFile + download return
 	shipmentList string            // body of GET /api/v1/shipments (one page); empty = 5 labels of today
 	tracking     map[string]string // tracking number -> last status of its tracking
@@ -116,18 +116,18 @@ func (f *fakeAPIs) handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/finance/credits", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		fmt.Fprintf(w, `{"data":{"balance":%v,"currency":"COP"},"meta":{"country_code":"CO"}}`, f.saldo)
+		fmt.Fprintf(w, `{"data":{"balance":%v,"currency":"COP"},"meta":{"country_code":"CO"}}`, f.balance)
 	})
 	mux.HandleFunc("POST /api/v1/shipments/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		if f.sinSaldo {
+		if f.noBalance {
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			_, _ = io.WriteString(w, `{"errors":"Fondos insuficientes","error_code":"INSUFFICIENT_CREDITS"}`)
 			return
 		}
 		f.shipments++
-		f.saldo -= 14500
+		f.balance -= 14500
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"data":{"id":"shp-1"}}`)
 	})
@@ -148,7 +148,7 @@ func (f *fakeAPIs) handler() http.Handler {
 		_, _ = io.WriteString(w, `{"data":{"id":"tpl-1"}}`)
 	})
 	mux.HandleFunc("GET /api/v1/shipments/shp-1", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"data":{"id":"shp-1","attributes":{}}}`) // la guía aún no está lista
+		_, _ = io.WriteString(w, `{"data":{"id":"shp-1","attributes":{}}}`) // the label isn't ready yet
 	})
 	mux.HandleFunc("GET /api/v1/shipments", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -158,10 +158,10 @@ func (f *fakeAPIs) handler() http.Handler {
 			_, _ = io.WriteString(w, custom)
 			return
 		}
-		hoy := time.Now().In(colombiaTZ).Format(time.RFC3339)
+		today := time.Now().In(colombiaTZ).Format(time.RFC3339)
 		var data, inc []string
 		for i := 1; i <= 5; i++ {
-			data = append(data, fmt.Sprintf(`{"id":"s%d","attributes":{"created_at":%q,"master_tracking_number":"G%d"},"relationships":{"packages":{"data":[{"id":"p%d"}]}}}`, i, hoy, i, i))
+			data = append(data, fmt.Sprintf(`{"id":"s%d","attributes":{"created_at":%q,"master_tracking_number":"G%d"},"relationships":{"packages":{"data":[{"id":"p%d"}]}}}`, i, today, i, i))
 			inc = append(inc, fmt.Sprintf(`{"id":"p%d","type":"package","attributes":{"label_url":"%s/labels/%d.pdf"}}`, i, f.srvURL, i))
 		}
 		fmt.Fprintf(w, `{"data":[%s],"included":[%s],"meta":{"total_pages":1}}`, strings.Join(data, ","), strings.Join(inc, ","))
@@ -173,7 +173,7 @@ func (f *fakeAPIs) handler() http.Handler {
 }
 
 func newTestBot(t *testing.T) (*Bot, *fakeAPIs) {
-	f := &fakeAPIs{saldo: 100000}
+	f := &fakeAPIs{balance: 100000}
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
 	f.srvURL = srv.URL
@@ -196,11 +196,11 @@ func callback(data string) *telegram.CallbackQuery {
 	return &telegram.CallbackQuery{ID: "cb", Data: data, Message: &telegram.Message{MessageID: 7, Chat: telegram.Chat{ID: -100}}}
 }
 
-func TestGenerarYConfirmarGuia(t *testing.T) {
+func TestGenerateAndConfirmLabel(t *testing.T) {
 	b, f := newTestBot(t)
 	ctx := context.Background()
-	data := domain.ShipmentData{Nombre: "Cliente de Prueba", Telefono: "3000000000", Departamento: "Antioquia",
-		Ciudad: "Medellín", Direccion: "Calle 1", Cantidad: 1, ValorUnitario: 60000, CodigoPostal: "050001"}
+	data := domain.ShipmentData{Name: "Cliente de Prueba", Phone: "3000000000", Department: "Antioquia",
+		City: "Medellín", Address: "Calle 1", Quantity: 1, UnitPrice: 60000, PostalCode: "050001"}
 	if err := b.st.add(Pending{OrderID: "orden-1", ChatID: 1, Sender: "Vendedor", Data: &data, CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestGenerarYConfirmarGuia(t *testing.T) {
 	}
 
 	b.handleCallback(ctx, callback("c:orden-1"))
-	b.handleCallback(ctx, callback("c:orden-1")) // doble toque
+	b.handleCallback(ctx, callback("c:orden-1")) // double tap
 	if f.shipments != 1 {
 		t.Fatalf("se crearon %d envíos, debe ser 1 aunque se toque dos veces", f.shipments)
 	}
@@ -236,10 +236,10 @@ func TestGenerarYConfirmarGuia(t *testing.T) {
 	}
 }
 
-func TestCancelarVuelveAlBotonGenerar(t *testing.T) {
+func TestCancelRestoresGenerateButton(t *testing.T) {
 	b, f := newTestBot(t)
 	ctx := context.Background()
-	data := domain.ShipmentData{Nombre: "Cliente", Ciudad: "Medellín", Departamento: "Antioquia", CodigoPostal: "050001", ValorUnitario: 60000}
+	data := domain.ShipmentData{Name: "Cliente", City: "Medellín", Department: "Antioquia", PostalCode: "050001", UnitPrice: 60000}
 	_ = b.st.add(Pending{OrderID: "orden-2", Data: &data})
 
 	b.handleCallback(ctx, callback("g:orden-2"))
@@ -252,9 +252,9 @@ func TestCancelarVuelveAlBotonGenerar(t *testing.T) {
 	}
 }
 
-func TestImprimirHoyEnviaHojas(t *testing.T) {
+func TestPrintTodaySendsSheets(t *testing.T) {
 	b, f := newTestBot(t)
-	b.imprimir(context.Background(), -100, 1)
+	b.printLabels(context.Background(), -100, 1)
 	if len(f.document) == 0 {
 		t.Fatal("no se envió el PDF")
 	}
@@ -266,7 +266,7 @@ func TestImprimirHoyEnviaHojas(t *testing.T) {
 	}
 }
 
-// fakeLabelPDF arma un PDF mínimo con el formato de la guía de Interrapidísimo (A4 horizontal girada 90°).
+// fakeLabelPDF builds a minimal PDF with the Interrapidísimo label format (landscape A4 rotated 90°).
 func fakeLabelPDF() []byte {
 	content := "BT /F1 24 Tf 40 300 Td (GUIA DE PRUEBA) Tj ET"
 	objs := []string{
@@ -292,41 +292,41 @@ func fakeLabelPDF() []byte {
 	return buf.Bytes()
 }
 
-func TestBotonesSoloEnGrupoDeGestion(t *testing.T) {
+func TestButtonsOnlyInOpsGroup(t *testing.T) {
 	b, f := newTestBot(t)
-	b.opts.GestionChatIDs = []int64{-200} // el grupo -100 (vendedor) ya no gestiona guías
-	data := domain.ShipmentData{Nombre: "Cliente", Ciudad: "Medellín", Departamento: "Antioquia", CodigoPostal: "050001", ValorUnitario: 60000}
+	b.opts.OpsChatIDs = []int64{-200} // group -100 (seller) no longer handles labels
+	data := domain.ShipmentData{Name: "Cliente", City: "Medellín", Department: "Antioquia", PostalCode: "050001", UnitPrice: 60000}
 	_ = b.st.add(Pending{OrderID: "orden-3", Data: &data})
 
-	b.handleCallback(context.Background(), callback("g:orden-3")) // tocado desde -100
+	b.handleCallback(context.Background(), callback("g:orden-3")) // tapped from -100
 	if len(f.edits) != 0 {
 		t.Fatalf("un botón del grupo del vendedor no debe cotizar, se editó: %v", f.edits)
 	}
-	if !b.isGestion(-200) || b.isGestion(-100) {
+	if !b.isOps(-200) || b.isOps(-100) {
 		t.Fatal("solo -200 debe ser el grupo de gestión")
 	}
 }
 
-func TestDiasAImprimir(t *testing.T) {
-	casos := map[string]int{
+func TestDaysToPrint(t *testing.T) {
+	cases := map[string]int{
 		"/imprimir":          1,
 		"/imprimir 3":        3,
 		"/imprimir@mi_bot 5": 5,
-		"/imprimir 40":       maxDiasImprimir,
+		"/imprimir 40":       maxPrintDays,
 		"/imprimir 0":        1,
 		"/imprimir hoy":      1,
 	}
-	for texto, want := range casos {
-		if got := diasAImprimir(texto); got != want {
-			t.Errorf("diasAImprimir(%q) = %d, want %d", texto, got, want)
+	for msgText, want := range cases {
+		if got := daysToPrint(msgText); got != want {
+			t.Errorf("diasAImprimir(%q) = %d, want %d", msgText, got, want)
 		}
 	}
 }
 
-func TestOrdenNuevaLlegaAAmbosGruposYBotonSoloAGestion(t *testing.T) {
+func TestNewOrderReachesBothGroupsAndButtonOnlyOps(t *testing.T) {
 	f := &fakeAPIs{}
 	var mu sync.Mutex
-	enviados := map[int64]string{} // chat -> botones del mensaje
+	sent := map[int64]string{} // chat -> message buttons
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /botTOKEN/sendMessage", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -336,14 +336,14 @@ func TestOrdenNuevaLlegaAAmbosGruposYBotonSoloAGestion(t *testing.T) {
 			} `json:"reply_markup"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		var datos []string
+		var payloadData []string
 		for _, row := range body.Markup.Keyboard {
 			for _, b := range row {
-				datos = append(datos, b.Data)
+				payloadData = append(payloadData, b.Data)
 			}
 		}
 		mu.Lock()
-		enviados[body.ChatID] = strings.Join(datos, ",")
+		sent[body.ChatID] = strings.Join(payloadData, ",")
 		mu.Unlock()
 		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
 	})
@@ -352,27 +352,27 @@ func TestOrdenNuevaLlegaAAmbosGruposYBotonSoloAGestion(t *testing.T) {
 	defer srv.Close()
 
 	b, err := New(Options{
-		Token: "TOKEN", APIBase: srv.URL, AdminChatIDs: []int64{-100}, GestionChatIDs: []int64{-200},
+		Token: "TOKEN", APIBase: srv.URL, AdminChatIDs: []int64{-100}, OpsChatIDs: []int64{-200},
 		StatePath: filepath.Join(t.TempDir(), "state.json"), CheckEvery: time.Hour,
 	}, skydropx.NewClient(config.Config{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.notifyAdmins(context.Background(), "Vendedor", domain.ShipmentData{Nombre: "Cliente"}, "orden-9", false, "", "")
+	b.notifyAdmins(context.Background(), "Vendedor", domain.ShipmentData{Name: "Cliente"}, "orden-9", false, "", "")
 
-	if got, ok := enviados[-200]; !ok || got != "g:orden-9" {
+	if got, ok := sent[-200]; !ok || got != "g:orden-9" {
 		t.Fatalf("tu grupo debe recibir la orden con el botón, recibió %q (ok=%v)", got, ok)
 	}
-	if got, ok := enviados[-100]; !ok || got != "" {
+	if got, ok := sent[-100]; !ok || got != "" {
 		t.Fatalf("el grupo del vendedor debe recibir la orden sin botones, recibió %q (ok=%v)", got, ok)
 	}
 }
 
-func TestSaldoInsuficiente(t *testing.T) {
+func TestInsufficientBalance(t *testing.T) {
 	b, f := newTestBot(t)
-	f.saldo = 5000
+	f.balance = 5000
 	ctx := context.Background()
-	data := domain.ShipmentData{Nombre: "Cliente", Ciudad: "Medellín", Departamento: "Antioquia", CodigoPostal: "050001", ValorUnitario: 60000}
+	data := domain.ShipmentData{Name: "Cliente", City: "Medellín", Department: "Antioquia", PostalCode: "050001", UnitPrice: 60000}
 	_ = b.st.add(Pending{OrderID: "orden-4", Data: &data})
 
 	b.handleCallback(ctx, callback("g:orden-4"))
@@ -380,7 +380,7 @@ func TestSaldoInsuficiente(t *testing.T) {
 		t.Fatalf("debe avisar antes de confirmar que no alcanza, llegó: %s", last)
 	}
 
-	f.sinSaldo = true
+	f.noBalance = true
 	b.handleCallback(ctx, callback("c:orden-4"))
 	last := f.edits[len(f.edits)-1]
 	if !strings.Contains(last, "saldo insuficiente en Skydropx") || strings.Join(f.buttons, ",") != "g:orden-4" {
@@ -391,10 +391,10 @@ func TestSaldoInsuficiente(t *testing.T) {
 	}
 }
 
-func TestAvisosYComisionSoloEnGrupoDeGestion(t *testing.T) {
-	f := &fakeAPIs{saldo: 100000}
+func TestNoticesAndCommissionOnlyInOpsGroup(t *testing.T) {
+	f := &fakeAPIs{balance: 100000}
 	var mu sync.Mutex
-	recibidos := map[int64][]string{} // chat -> textos
+	received := map[int64][]string{} // chat -> texts
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /botTOKEN/sendMessage", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -403,7 +403,7 @@ func TestAvisosYComisionSoloEnGrupoDeGestion(t *testing.T) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		mu.Lock()
-		recibidos[body.ChatID] = append(recibidos[body.ChatID], body.Text)
+		received[body.ChatID] = append(received[body.ChatID], body.Text)
 		mu.Unlock()
 		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
 	})
@@ -412,7 +412,7 @@ func TestAvisosYComisionSoloEnGrupoDeGestion(t *testing.T) {
 	defer srv.Close()
 	f.srvURL = srv.URL
 
-	ajustes, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"), 15000)
+	appSettings, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"), 15000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,45 +420,45 @@ func TestAvisosYComisionSoloEnGrupoDeGestion(t *testing.T) {
 		SkydropxMode: "live", SkydropxBaseURL: srv.URL, SkydropxClientID: "id", SkydropxClientSecret: "secret",
 	})
 	b, err := New(Options{
-		Token: "TOKEN", APIBase: srv.URL, AllowedChatIDs: []int64{-100}, AdminChatIDs: []int64{-100}, GestionChatIDs: []int64{-200},
-		StatePath: filepath.Join(t.TempDir(), "state.json"), CheckEvery: time.Hour, Settings: ajustes,
+		Token: "TOKEN", APIBase: srv.URL, AllowedChatIDs: []int64{-100}, AdminChatIDs: []int64{-100}, OpsChatIDs: []int64{-200},
+		StatePath: filepath.Join(t.TempDir(), "state.json"), CheckEvery: time.Hour, Settings: appSettings,
 	}, sky)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	// El vendedor no puede cambiar la comisión.
+	// The seller can't change the commission.
 	b.handle(ctx, -100, "Vendedor", "/comision 30000")
-	if got := ajustes.CurrentCommission(); got != 15000 {
+	if got := appSettings.CurrentCommission(); got != 15000 {
 		t.Fatalf("el vendedor cambió la comisión a %v", got)
 	}
-	// Desde tu grupo sí.
+	// From your group it can.
 	b.handle(ctx, -200, "Tú", "/comision 12000")
-	if got := ajustes.CurrentCommission(); got != 12000 {
+	if got := appSettings.CurrentCommission(); got != 12000 {
 		t.Fatalf("la comisión debía quedar en 12000, quedó en %v", got)
 	}
 
-	// El pago y el problema de entrega llegan a los dos grupos (al vendedor, el pago sin lo del saldo).
+	// The payment and the delivery problem reach both groups (to the seller, the payment without the balance).
 	mu.Lock()
-	recibidos = map[int64][]string{}
+	received = map[int64][]string{}
 	mu.Unlock()
-	b.avisoEntrega("s1", "G1", "collected")
-	b.avisoIncidencia("s2", "delivery_attempt", "G2", "Destinatario ausente", "")
+	b.deliveryNotice("s1", "G1", "collected")
+	b.incidentNotice("s2", "delivery_attempt", "G2", "Destinatario ausente", "")
 	mu.Lock()
 	defer mu.Unlock()
-	if len(recibidos[-100]) != 2 || !strings.Contains(recibidos[-100][0], "Pagaron") || strings.Contains(recibidos[-100][0], "saldo disponible") ||
-		!strings.Contains(recibidos[-100][1], "No pudieron entregar") {
-		t.Fatalf("el grupo del vendedor debía recibir el pago (sin lo del saldo) y el problema de entrega: %q", recibidos[-100])
+	if len(received[-100]) != 2 || !strings.Contains(received[-100][0], "Pagaron") || strings.Contains(received[-100][0], "saldo disponible") ||
+		!strings.Contains(received[-100][1], "No pudieron entregar") {
+		t.Fatalf("el grupo del vendedor debía recibir el pago (sin lo del saldo) y el problema de entrega: %q", received[-100])
 	}
-	if len(recibidos[-200]) != 2 || !strings.Contains(recibidos[-200][0], "Pagaron") || !strings.Contains(recibidos[-200][1], "No pudieron entregar") {
-		t.Fatalf("tu grupo debía recibir el pago y el problema de entrega: %q", recibidos[-200])
+	if len(received[-200]) != 2 || !strings.Contains(received[-200][0], "Pagaron") || !strings.Contains(received[-200][1], "No pudieron entregar") {
+		t.Fatalf("tu grupo debía recibir el pago y el problema de entrega: %q", received[-200])
 	}
 }
 
-func TestAyudaEnGrupoDelVendedorSinAutorizar(t *testing.T) {
+func TestHelpInUnauthorizedSellerGroup(t *testing.T) {
 	var mu sync.Mutex
-	var textos []string
+	var texts []string
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /botTOKEN/sendMessage", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -466,14 +466,14 @@ func TestAyudaEnGrupoDelVendedorSinAutorizar(t *testing.T) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		mu.Lock()
-		textos = append(textos, body.Text)
+		texts = append(texts, body.Text)
 		mu.Unlock()
 		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	b, err := New(Options{
-		Token: "TOKEN", APIBase: srv.URL, AllowedChatIDs: []int64{111}, AdminChatIDs: []int64{-5031891945}, GestionChatIDs: []int64{-200},
+		Token: "TOKEN", APIBase: srv.URL, AllowedChatIDs: []int64{111}, AdminChatIDs: []int64{-5031891945}, OpsChatIDs: []int64{-200},
 		StatePath: filepath.Join(t.TempDir(), "state.json"), CheckEvery: time.Hour,
 	}, skydropx.NewClient(config.Config{}))
 	if err != nil {
@@ -483,10 +483,10 @@ func TestAyudaEnGrupoDelVendedorSinAutorizar(t *testing.T) {
 	b.handle(context.Background(), -999, "Otro", "/ayuda")
 	mu.Lock()
 	defer mu.Unlock()
-	if len(textos) != 2 || !strings.Contains(textos[0], "GRUPO DE GUÍAS") {
-		t.Fatalf("el grupo del vendedor debía recibir la ayuda: %q", textos)
+	if len(texts) != 2 || !strings.Contains(texts[0], "GRUPO DE GUÍAS") {
+		t.Fatalf("el grupo del vendedor debía recibir la ayuda: %q", texts)
 	}
-	if !strings.Contains(textos[1], "No estás autorizado") {
-		t.Fatalf("un chat desconocido no debe recibir la ayuda: %q", textos[1])
+	if !strings.Contains(texts[1], "No estás autorizado") {
+		t.Fatalf("un chat desconocido no debe recibir la ayuda: %q", texts[1])
 	}
 }
