@@ -98,12 +98,12 @@ Fuente: Facebook</code>
 <b>Fuente</b> → de dónde llegó el cliente: Facebook, WhatsApp, referido… (opcional)
 🔁 ¿Es igual a un pedido reciente pero sí es nuevo? Escribe <code>REPETIR</code> en la primera línea</blockquote>
 
-🔔 <b>LO QUE TE LLEGA</b>
+🔔 <b>LLEGAN SOLOS</b> · no tienes que escribir nada
 <blockquote expandable>📦 <b>Orden creada</b> → el pedido entró bien
 ✅ <b>Guía lista</b> → número, rastreo y PDF para enviarle al cliente
 ⚠️ <b>Cliente con historial</b> → ya no pagó o tardó en recoger antes: te aviso al crear el pedido</blockquote>
 
-🔎 <b>CONSULTAR</b>
+🔎 <b>PARA CONSULTAR</b> · escribe el comando
 <blockquote expandable><code>/guia 240012345678</code> — en qué va un envío
 <code>/cliente 1234567890</code> — historial de un cliente por cédula o teléfono, antes de venderle</blockquote>
 
@@ -113,19 +113,23 @@ Fuente: Facebook</code>
 const ayudaGrupoGuias = `📌 <b>GRUPO DE GUÍAS</b>
 <i>Aquí llega cada guía lista para reenviársela al comprador, y todo lo que pasa con el envío.</i>
 
-📦 <b>GUÍAS</b>
-<blockquote expandable>📦 <b>Orden creada</b> → el pedido entró
-✅ <b>Guía lista</b> → número, enlace de rastreo y PDF: reenvíaselo al comprador</blockquote>
+🔔 <b>LLEGAN SOLOS</b> · no tienes que escribir nada
+<blockquote expandable><b>Pedido y guía</b>
+📦 <b>Orden creada</b> → el pedido entró
+⚠️ <b>Cliente con historial</b> → la orden llega con advertencia: ya no pagó o tardó en recoger antes
+✅ <b>Guía lista</b> → número, enlace de rastreo y PDF: reenvíaselo al comprador
 
-🔔 <b>QUÉ PASA CON EL ENVÍO</b>
-<blockquote expandable>🛵 <b>En ruta</b> → llega hoy; trae el enlace para avisarle al cliente por WhatsApp
+<b>Mientras viaja</b>
+🛵 <b>En ruta</b> → llega hoy; trae el enlace para avisarle al cliente por WhatsApp
 🏢 <b>En oficina</b> → llama al cliente para que lo recoja y pague
 ⚠️ <b>No pudieron entregar</b> → llama al cliente antes de que el paquete se devuelva
 🚨 <b>Novedad</b> → revisa con el cliente
+
+<b>Al final</b>
 💵 <b>¡Pagaron!</b> → entregado y cobrado
 ❌ <b>No se pudo cobrar</b> → no lo recibió; trae su teléfono para llamarlo y saber por qué</blockquote>
 
-🔎 <b>CONSULTAR</b>
+🔎 <b>PARA CONSULTAR</b> · escribe el comando
 <blockquote expandable><code>/guia 240012345678</code> — en qué va un envío, sus últimos eventos y cuánto falta por cobrar
 <code>/cliente 1234567890</code> — historial de un cliente por cédula o teléfono</blockquote>
 
