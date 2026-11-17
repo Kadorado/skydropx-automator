@@ -10,68 +10,73 @@ import (
 // Textos de /ayuda de cada grupo, pensados para fijarlos en el chat. Si se agregan comandos,
 // se actualizan aquí y se vuelve a fijar la respuesta de /ayuda.
 
-const ayudaGestion = `📌 <b>GRUPO DE GESTIÓN — Comandos y avisos</b>
+const ayudaGestion = `📌 <b>GESTIÓN — guía rápida</b>
+<i>Toca una sección para verla completa. Los comandos en gris se copian al tocarlos: cambia el número y envía.</i>
 
-🖨️ <b>IMPRIMIR GUÍAS</b>
-/imprimir → guías de hoy en hojas carta, 4 por hoja
-/imprimir 3 → guías de los últimos 3 días (hasta 15). Útil después de un festivo
+🚚 <b>DESPACHAR</b>
+<blockquote expandable>/despachos — guías que faltan por llevar a Interrapidísimo
+/imprimir — guías de hoy, 4 por hoja carta
+<code>/imprimir 3</code> — las de los últimos 3 días (hasta 15), útil después de un festivo
+<code>/guia 240012345678</code> — dónde va un paquete y cuánto falta por cobrar</blockquote>
 
-⏰ <b>MENSAJES AUTOMÁTICOS</b> (llegan en este orden)
-8 a. m., lunes: 🗄️ respaldo de clientes y 📊 resumen de la semana
-8 a. m., lunes a sábado sin festivos: 📦 guías por despachar (solo si hay alguna)
-8 p. m., todos los días: 📊 resumen del día
-Oficina de Interrapidísimo: lunes a viernes hasta las 6:30 p. m., sábados hasta las 5 p. m.; domingos y festivos cerrada.
+🔔 <b>AVISOS QUE LLEGAN SOLOS</b>
+<blockquote expandable>📦 <b>Orden nueva</b> → toca 🚚 para generar la guía
+⚠️ <b>Cliente con historial</b> → ya no pagó o tardó 3+ días en recoger: confirma antes de generar
+🚚 <b>Recibido</b> → la transportadora ya lo tiene, va en camino
+🛵 <b>En ruta</b> → llega hoy; trae el enlace para avisarle al cliente por WhatsApp
+🏢 <b>En oficina</b> → avísale al cliente que lo recoja y pague
+⚠️ <b>No pudieron entregar</b> → llama al cliente, la transportadora reintenta
+🚨 <b>Novedad</b> → revisa con el cliente o la transportadora
+💵 <b>¡Pagaron!</b> → entregado y cobrado
+❌ <b>No se pudo cobrar</b> → va en devolución</blockquote>
+
+⏰ <b>HORARIO</b>
+<blockquote expandable>🌅 <b>8 a. m., lunes</b> → 🗄️ respaldo de clientes y 📊 resumen de la semana
+🌅 <b>8 a. m., lunes a sábado</b> (sin festivos) → 📦 lo que falta por despachar, si hay algo
+🌙 <b>8 p. m., todos los días</b> → 📊 resumen del día
+🏢 <b>Oficina Interrapidísimo</b>: lunes a viernes hasta 6:30 p. m. · sábados hasta 5 p. m. · domingos y festivos cerrada</blockquote>
+
+🆘 <b>CLIENTES CON PROBLEMAS</b>
+<blockquote expandable>/novedades — envíos de los últimos 45 días para gestionar: devoluciones, intentos fallidos, en oficina y con novedad. Con teléfono, ciudad y guía
+<code>/cliente 1234567890</code> — historial por cédula o teléfono: si pagó, si devolvió y si tardó en recoger</blockquote>
 
 📊 <b>RESÚMENES</b>
-/resumen → lo de hoy y lo que va del mes
-/resumen semana → la semana anterior (lunes a domingo)
+<blockquote expandable>/resumen — lo de hoy y lo que va del mes
+<code>/resumen semana</code> — la semana anterior, de lunes a domingo</blockquote>
 
-📋 <b>NOVEDADES PARA GESTIONAR</b>
-/despachos → guías creadas que todavía no se han llevado a Interrapidísimo
-/novedades → envíos de los últimos 45 días que hay que gestionar con el cliente: en devolución o sin cobrar, intentos de entrega fallidos, en oficina y con novedad. Trae teléfono, ciudad, guía y último evento.
-/guia 240012345678 → estado de esa guía, últimos eventos y cuánto falta por cobrar
-/cliente 1234567890 → historial de un cliente por cédula o teléfono: qué pagó, qué devolvió y si tardó en recoger en oficina
+🤝 <b>VENDEDOR</b> · comisión, pagos y publicidad
+<blockquote expandable><b>Cuánto se le debe</b>
+/deuda — últimos 7 días, día por día
+<code>/deuda hoy</code> · <code>/deuda ayer</code> · <code>/deuda 3</code> · <code>/deuda semana</code> · <code>/deuda mes</code>
+<code>/deuda 2026-11-03</code> · <code>/deuda 2026-11-01 2026-11-10</code>
+
+<b>Pagos</b>
+<code>/pago 150000</code> — registra lo que le pagaste: cubre lo cobrado de lo más antiguo a lo más nuevo
+<code>/pago 150000 hasta ayer</code> — solo guías hasta esa fecha
+/pagos — pagos y saldo · <code>/pago borrar</code> — deshace el último
+
+<b>Publicidad</b> (mitad y mitad)
+<code>/publicidad 40000</code> — la pagaste tú: se le descuenta la mitad
+<code>/publicidad 40000 vendedor</code> — la pagó él: se le suma la mitad
+/publicidad — ver lo registrado · <code>/publicidad borrar</code> — deshace la última
+
+<b>Comisión por datáfono</b>
+/comision — valor actual y cambios
+<code>/comision 12000</code> — desde hoy · <code>/comision 12000 2026-12-01</code> — desde esa fecha
+Lo vendido antes conserva el valor de su momento.</blockquote>
 
 👥 <b>BASE DE CLIENTES</b>
-/clientes → resumen y archivo para Excel con todos los clientes
-/clientes migrar → traer los clientes de los envíos anteriores en Skydropx (se hace una vez; si se repite no duplica)
-/clientes respaldo → copia completa de la base; para recuperar, responde a ese archivo con /clientes restaurar
-/autoriza 3001234567 respondió SÍ por WhatsApp → registrar que el cliente autorizó publicidad
-/baja 3001234567 → el cliente no quiere más mensajes
-Cada pedido nuevo guarda al cliente solo; si el pedido trae "Autoriza datos: SÍ", queda autorizado, y "Fuente:" dice de dónde llegó.
+<blockquote expandable>/clientes — resumen y archivo para Excel
+<code>/autoriza 3001234567 respondió SÍ por WhatsApp</code> — el cliente aceptó recibir publicidad
+<code>/baja 3001234567</code> — ya no quiere más mensajes
+<code>/clientes respaldo</code> — copia completa; para recuperar, responde a ese archivo con <code>/clientes restaurar</code>
+<code>/clientes migrar</code> — traer los clientes antiguos de Skydropx (una vez; si se repite no duplica)
+Cada pedido guarda al cliente solo. Si el pedido trae <code>Autoriza datos: SÍ</code> queda autorizado, y <code>Fuente: Facebook</code> dice de dónde llegó.</blockquote>
 
-🤝 <b>COMISIÓN DEL VENDEDOR</b>
-/deuda → lo que se le debe en los últimos 7 días, día por día
-/deuda 3 → últimos 3 días · /deuda hoy · /deuda ayer
-/deuda semana → la semana anterior · /deuda mes → lo que va del mes
-/deuda 2026-11-03 → ese día · /deuda 2026-11-01 2026-11-10 → ese rango
-/pago 150000 → registrar lo que le pagaste: marca como pagado lo cobrado, de lo más antiguo a lo más nuevo, hasta donde alcance
-/pago 150000 hasta ayer → solo lo cobrado de guías creadas hasta ayer (o hasta 2026-11-15)
-/pago borrar → borrar el último pago · /pagos → ver los pagos y el saldo
-/publicidad 40000 → publicidad que pagaste tú: él pone la mitad (se descuenta de su comisión)
-/publicidad 40000 vendedor → la pagó él: se le suma la mitad · se puede agregar fecha y nota
-/publicidad → ver lo registrado · /publicidad borrar → borrar la última
-/comision → ver el valor actual por datáfono y los cambios
-/comision 12000 → cambiarlo desde hoy
-/comision 12000 2026-12-01 → cambiarlo desde esa fecha
-Las ventas anteriores conservan el valor de su momento.
-
-🔔 <b>AVISOS AUTOMÁTICOS</b>
-📦 Orden nueva → con el botón 🚚 para generar la guía
-⚠️ Si el cliente ya no pagó o tardó 3 días o más en recoger en oficina, la orden llega con advertencia y hay que confirmar antes de generar la guía
-🚚 La transportadora recibió el paquete → ya va en camino
-🛵 En ruta de entrega → llega hoy, con el enlace para avisarle al cliente por WhatsApp
-💵 ¡Pagaron! → el paquete se entregó y el cliente pagó
-❌ No se pudo cobrar → el paquete va en devolución
-⚠️ No pudieron entregar → llama al cliente, la transportadora reintenta
-🏢 Quedó en la oficina → avísale al cliente que lo recoja y pague
-🚨 Novedad con el envío → revisa con el cliente o la transportadora
-
-/ayuda → ver esta ayuda`
+/ayuda — ver esta guía otra vez`
 
 const ayudaVendedor = `📌 <b>CÓMO CREAR UN PEDIDO</b>
-
-Envía los datos del cliente en un solo mensaje, así:
+<i>Toca el formato para copiarlo, cambia los datos del cliente y envíalo en un solo mensaje.</i>
 
 <code>Nombre: Ana Pérez
 Cédula: 1234567890
@@ -85,40 +90,47 @@ Valor: 60000
 Autoriza datos: SÍ
 Fuente: Facebook</code>
 
-• "Valor" es por datáfono. Si no lo pones, se usa 60.000.
-• Correo y código postal son opcionales.
-• "Autoriza datos": pregúntale al cliente si acepta que guardemos sus datos para enviarle ofertas, y pon SÍ o NO. Si no lo preguntaste, quita la línea.
-• "Fuente": de dónde llegó el cliente (Facebook, WhatsApp, referido…). Es opcional.
+✏️ <b>CÓMO LLENARLO</b>
+<blockquote expandable><b>Cantidad</b> → cuántos datáfonos lleva el pedido
+<b>Valor</b> → precio por datáfono. Si no lo pones, se usa 60.000
+<b>Correo</b> y <b>código postal</b> → opcionales
+<b>Autoriza datos</b> → pregúntale al cliente si acepta que guardemos sus datos para enviarle ofertas, y pon SÍ o NO. Si no le preguntaste, borra la línea
+<b>Fuente</b> → de dónde llegó el cliente: Facebook, WhatsApp, referido… (opcional)
+🔁 ¿Es igual a un pedido reciente pero sí es nuevo? Escribe <code>REPETIR</code> en la primera línea</blockquote>
 
-🔁 Si es un pedido igual a uno reciente y SÍ es nuevo, escribe REPETIR en la primera línea.
+🔔 <b>LO QUE TE LLEGA</b>
+<blockquote expandable>📦 <b>Orden creada</b> → el pedido entró bien
+✅ <b>Guía lista</b> → número, rastreo y PDF para enviarle al cliente
+⚠️ <b>Cliente con historial</b> → ya no pagó o tardó en recoger antes: te aviso al crear el pedido</blockquote>
 
-🔔 <b>AQUÍ TE LLEGA</b>
-📦 La orden creada
-✅ La guía lista, con el número, el rastreo y el PDF para enviarle al cliente
+🔎 <b>CONSULTAR</b>
+<blockquote expandable><code>/guia 240012345678</code> — en qué va un envío
+<code>/cliente 1234567890</code> — historial de un cliente por cédula o teléfono, antes de venderle</blockquote>
 
-⚠️ Si el cliente ya no pagó o tardó en recoger en oficina antes, te aviso al crear el pedido
-
-/guia 240012345678 → ver en qué va un envío
-/cliente 1234567890 → ver el historial de un cliente (cédula o teléfono) antes de venderle
-/ayuda → ver esta ayuda`
+/ayuda — ver esta guía otra vez`
 
 // ayudaGrupoGuias es la ayuda del grupo donde el vendedor recibe las guías (no crea pedidos ahí).
 const ayudaGrupoGuias = `📌 <b>GRUPO DE GUÍAS</b>
+<i>Aquí llega cada guía lista para reenviársela al comprador, y todo lo que pasa con el envío.</i>
 
-Aquí llega cada guía lista para que se la reenvíes al comprador:
-📦 La orden creada
-✅ La guía con el número, el enlace de rastreo y el PDF
-🛵 En ruta de entrega → el paquete llega hoy, con el enlace para avisarle al cliente por WhatsApp
-💵 ¡Pagaron! → el paquete se entregó y el cliente pagó
-⚠️ No pudieron entregar · 🏢 Quedó en la oficina · 🚨 Novedad → llama al cliente antes de que el paquete se devuelva
-❌ No se pudo cobrar → el cliente no recibió; trae su teléfono para llamarlo y saber por qué
+📦 <b>GUÍAS</b>
+<blockquote expandable>📦 <b>Orden creada</b> → el pedido entró
+✅ <b>Guía lista</b> → número, enlace de rastreo y PDF: reenvíaselo al comprador</blockquote>
 
-/guia 240012345678 → ver en qué va un envío, sus últimos eventos y cuánto falta por cobrar
-/cliente 1234567890 → historial de un cliente por cédula o teléfono
+🔔 <b>QUÉ PASA CON EL ENVÍO</b>
+<blockquote expandable>🛵 <b>En ruta</b> → llega hoy; trae el enlace para avisarle al cliente por WhatsApp
+🏢 <b>En oficina</b> → llama al cliente para que lo recoja y pague
+⚠️ <b>No pudieron entregar</b> → llama al cliente antes de que el paquete se devuelva
+🚨 <b>Novedad</b> → revisa con el cliente
+💵 <b>¡Pagaron!</b> → entregado y cobrado
+❌ <b>No se pudo cobrar</b> → no lo recibió; trae su teléfono para llamarlo y saber por qué</blockquote>
 
-🛒 Los pedidos se crean escribiéndole al bot por chat privado, con los datos del cliente.
+🔎 <b>CONSULTAR</b>
+<blockquote expandable><code>/guia 240012345678</code> — en qué va un envío, sus últimos eventos y cuánto falta por cobrar
+<code>/cliente 1234567890</code> — historial de un cliente por cédula o teléfono</blockquote>
 
-/ayuda → ver esta ayuda`
+🛒 Los pedidos se crean escribiéndole al bot por chat privado.
+/ayuda — ver esta guía otra vez`
 
 // Menús de comandos de cada grupo (lo que Telegram sugiere al escribir "/").
 var (

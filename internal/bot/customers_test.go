@@ -249,3 +249,17 @@ func TestWeeklyBackup(t *testing.T) {
 		t.Fatal("once per Monday")
 	}
 }
+
+func TestHelpTextsFitTelegram(t *testing.T) {
+	for name, txt := range map[string]string{"gestion": ayudaGestion, "vendedor": ayudaVendedor, "guias": ayudaGrupoGuias} {
+		if n := len([]rune(txt)); n > 4096 {
+			t.Errorf("%s: %d characters, Telegram allows 4096", name, n)
+		}
+		for _, tag := range []string{"b", "i", "code", "blockquote"} {
+			open := strings.Count(txt, "<"+tag+">") + strings.Count(txt, "<"+tag+" ")
+			if closed := strings.Count(txt, "</"+tag+">"); open != closed {
+				t.Errorf("%s: <%s> opened %d times, closed %d", name, tag, open, closed)
+			}
+		}
+	}
+}
