@@ -91,7 +91,8 @@ func newID(documentID, phone string) string {
 //     never erase anything. A historical order (migrated from Skydropx) only fills empty fields, because
 //     it is older than what is stored, and it isn't added twice: same date and time, same order,
 //   - consent is only granted here, never revoked (revoking is opt-out),
-//   - the source is the first one known: where the customer originally came from,
+//   - the source is the first one known: where the customer originally came from (the skydropx
+//     placeholder is replaced by a real source),
 //   - the order is appended and the first/last order dates are widened.
 func merge(existing *Customer, id string, in Customer, o Order, historical bool, now time.Time) Customer {
 	c := Customer{ID: id}
@@ -104,7 +105,7 @@ func merge(existing *Customer, id string, in Customer, o Order, historical bool,
 			*f.dst = f.value
 		}
 	}
-	if src := normalizeSource(in.Source); c.Source == "" {
+	if src := normalizeSource(in.Source); src != "" && (c.Source == "" || c.Source == SourceSkydropx) {
 		c.Source = src
 	}
 	if in.Consent.Given && !c.Consent.Given {

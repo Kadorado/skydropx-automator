@@ -278,3 +278,17 @@ func TestReadBackupRejectsOtherFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestRealSourceReplacesSkydropx(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemoryStore()
+	_, _ = s.RecordOrder(ctx, Customer{Name: "Ana", Phone: "3001112233", Source: SourceSkydropx}, Order{Date: day(1)})
+	c, _ := s.RecordOrder(ctx, Customer{Name: "Ana", Phone: "3001112233", Source: "Facebook"}, Order{Date: day(2)})
+	if c.Source != "facebook" {
+		t.Fatalf("source = %q, want facebook replacing the skydropx placeholder", c.Source)
+	}
+	c, _ = s.RecordOrder(ctx, Customer{Name: "Ana", Phone: "3001112233", Source: SourceSkydropx}, Order{Date: day(3)})
+	if c.Source != "facebook" {
+		t.Fatalf("source = %q, a later skydropx must not replace facebook", c.Source)
+	}
+}

@@ -119,7 +119,10 @@ func (m *mongoRepo) addOrder(ctx context.Context, id string, in Customer, o Orde
 		}
 	}
 	if src := normalizeSource(in.Source); src != "" {
-		set = append(set, bson.E{Key: "source", Value: keepIfSet("source", src)})
+		// The stored source wins unless it is the skydropx placeholder.
+		set = append(set, bson.E{Key: "source", Value: bson.D{{Key: "$cond", Value: bson.A{
+			bson.D{{Key: "$in", Value: bson.A{bson.D{{Key: "$ifNull", Value: bson.A{"$source", ""}}}, bson.A{"", SourceSkydropx}}}}, literal(src), "$source",
+		}}}})
 	}
 	consent := bson.D{{Key: "$ifNull", Value: bson.A{"$consent", literal(Consent{})}}}
 	if in.Consent.Given {

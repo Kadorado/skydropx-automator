@@ -82,6 +82,9 @@ func (b *Bot) saveCustomer(ctx context.Context, u UnsavedCustomer) error {
 		Department: data.Department, City: data.City, Neighborhood: data.Neighborhood, Address: data.Address,
 		Source: data.Source,
 	}
+	if in.Source == "" {
+		in.Source = customers.SourceSkydropx // for now every order goes through the Skydropx API
+	}
 	if data.DataConsent == "si" {
 		in.Consent = customers.Consent{Given: true, Date: u.At, Evidence: `Pedido por Telegram con "Autoriza datos: SÍ"`, RecordedBy: u.Sender}
 	}

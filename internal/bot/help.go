@@ -95,7 +95,7 @@ Fuente: Facebook</code>
 <b>Valor</b> → precio por datáfono. Si no lo pones, se usa 60.000
 <b>Correo</b> y <b>código postal</b> → opcionales
 <b>Autoriza datos</b> → pregúntale al cliente si acepta que guardemos sus datos para enviarle ofertas, y pon SÍ o NO. Si no le preguntaste, borra la línea
-<b>Fuente</b> → de dónde llegó el cliente: Facebook, WhatsApp, referido… (opcional)
+<b>Fuente</b> → de dónde llegó el cliente: Facebook, WhatsApp, referido… (opcional; sin ella queda «skydropx»)
 🔁 ¿Es igual a un pedido reciente pero sí es nuevo? Escribe <code>REPETIR</code> en la primera línea</blockquote>
 
 🔔 <b>LLEGAN SOLOS</b> · no tienes que escribir nada

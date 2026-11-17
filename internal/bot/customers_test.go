@@ -30,7 +30,7 @@ func TestCustomerListFromOrders(t *testing.T) {
 
 	b.customersCommand(ctx, -100, "/clientes")
 	summary := f.messages[len(f.messages)-1]
-	for _, want := range []string{"BASE DE CLIENTES", "Clientes: <b>2</b>", "Autorizaron publicidad: <b>1</b>", "Sin autorización: 1", "Montería: 1", "facebook: 1", "Sin indicar: 1"} {
+	for _, want := range []string{"BASE DE CLIENTES", "Clientes: <b>2</b>", "Autorizaron publicidad: <b>1</b>", "Sin autorización: 1", "Montería: 1", "facebook: 1", "skydropx: 1"} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("falta %q en:\n%s", want, summary)
 		}

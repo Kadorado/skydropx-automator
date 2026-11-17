@@ -80,7 +80,8 @@ func (s *Store) record(ctx context.Context, in Customer, o Order, historical boo
 	}
 }
 
-// SourceSkydropx is the source of the customers migrated from Skydropx.
+// SourceSkydropx is the source of the customers migrated from Skydropx and of orders without a
+// "Fuente:" line. It is a placeholder: a real source given later replaces it.
 const SourceSkydropx = "skydropx"
 
 // MigrationResult summarizes a migration.
