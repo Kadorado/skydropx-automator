@@ -60,8 +60,7 @@ func main() {
 	needHeader := err != nil || len(prev) == 0
 	if !needHeader {
 		for _, r := range prev[1:] {
-			// errors and changed codes are retried (the retry order changed: own codes first)
-			done[r[0]+"|"+r[1]] = r[4] != "error" && r[4] != "corregido" && r[4] != "codigo_no_existe"
+			done[r[0]+"|"+r[1]] = r[4] != "error"
 		}
 	}
 
@@ -126,7 +125,8 @@ func validate(client *skydropx.Client, cfg config.Config, department, city, code
 		state = "sin_contraentrega" // the carrier reaches it, but not cash on delivery
 	case strings.Contains(err.Error(), "no reconoce el código postal"):
 		state = "codigo_no_existe"
-	case strings.Contains(err.Error(), "cobertura") || strings.Contains(err.Error(), "Interrapid"):
+	case strings.Contains(err.Error(), "cobertura") || strings.Contains(err.Error(), "Interrapid") ||
+		strings.Contains(err.Error(), "No Coverage"):
 		state = "sin_cobertura"
 	default:
 		state = "error"

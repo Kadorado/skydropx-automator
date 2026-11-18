@@ -47,9 +47,13 @@ func apply(resultsPath string) (changed, problems int, err error) {
 		if !ok {
 			continue
 		}
-		switch r[4] {
+		state := r[4]
+		if state == "error" && strings.Contains(r[7], "No Coverage") { // older runs didn't classify it
+			state = "sin_cobertura"
+		}
+		switch state {
 		case "sin_contraentrega", "sin_cobertura", "codigo_no_existe":
-			coverage = append(coverage, []string{row[0], row[1], r[4]})
+			coverage = append(coverage, []string{row[0], row[1], state})
 			problems++
 		}
 	}

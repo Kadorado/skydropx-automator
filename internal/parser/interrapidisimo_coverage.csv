@@ -46,25 +46,69 @@ BOLIVAR,NOROSI,sin_contraentrega
 BOLIVAR,SAN FERNANDO,sin_contraentrega
 BOLIVAR,SAN MARTIN DE LOBA,sin_contraentrega
 BOLIVAR,TIQUISIO,sin_contraentrega
-CHOCO,ACANDI,sin_contraentrega
-CHOCO,ALTO BAUDO,sin_contraentrega
-CHOCO,BAGADO,sin_contraentrega
-CHOCO,BAJO BAUDO,sin_contraentrega
-CHOCO,BOJAYA,sin_contraentrega
+BOYACA,CHIQUIZA,sin_cobertura
+CASANARE,CHAMEZA,sin_contraentrega
+CASANARE,SACAMA,sin_contraentrega
+CAUCA,GUAPI,sin_contraentrega
+CAUCA,LOPEZ,sin_contraentrega
+CAUCA,PADILLA,sin_contraentrega
+CAUCA,TIMBIQUI,sin_contraentrega
+CHOCO,ACANDI,sin_cobertura
+CHOCO,ALTO BAUDO,sin_cobertura
+CHOCO,BAGADO,sin_cobertura
+CHOCO,BAJO BAUDO,sin_cobertura
+CHOCO,BOJAYA,sin_cobertura
 CHOCO,CARMEN DEL DARIEN,sin_cobertura
-CHOCO,EL CANTON DEL SAN PABLO,sin_contraentrega
-CHOCO,EL CARMEN DE ATRATO,sin_contraentrega
-CHOCO,EL LITORAL DEL SAN JUAN,sin_contraentrega
-CHOCO,JURADO,sin_contraentrega
-CHOCO,LLORO,sin_contraentrega
-CHOCO,MEDIO ATRATO,sin_contraentrega
+CHOCO,EL CANTON DEL SAN PABLO,sin_cobertura
+CHOCO,EL CARMEN DE ATRATO,sin_cobertura
+CHOCO,EL LITORAL DEL SAN JUAN,sin_cobertura
+CHOCO,JURADO,sin_cobertura
+CHOCO,LLORO,sin_cobertura
+CHOCO,MEDIO ATRATO,sin_cobertura
 CHOCO,MEDIO BAUDO,sin_cobertura
-CHOCO,MEDIO SAN JUAN,sin_contraentrega
-CHOCO,NOVITA,sin_contraentrega
-CHOCO,NUQUI,sin_contraentrega
-CHOCO,RIO IRO,sin_contraentrega
-CHOCO,RIO QUITO,sin_contraentrega
+CHOCO,MEDIO SAN JUAN,sin_cobertura
+CHOCO,NOVITA,sin_cobertura
+CHOCO,NUQUI,sin_cobertura
+CHOCO,RIO IRO,sin_cobertura
+CHOCO,RIO QUITO,sin_cobertura
 CHOCO,RIOSUCIO,sin_cobertura
 CHOCO,SAN JOSE DEL PALMAR,sin_cobertura
-CHOCO,SIPI,sin_contraentrega
-CHOCO,UNGUIA,sin_contraentrega
+CHOCO,SIPI,sin_cobertura
+CHOCO,UNGUIA,sin_cobertura
+GUAINIA,CACAHUAL,sin_contraentrega
+GUAINIA,GUADALUPE,sin_contraentrega
+GUAINIA,MORICHAL,sin_contraentrega
+GUAINIA,PANA PANA,sin_contraentrega
+GUAINIA,PUERTO COLOMBIA,sin_contraentrega
+GUAINIA,SAN FELIPE,sin_cobertura
+MAGDALENA,CIENAGA,sin_cobertura
+MAGDALENA,EL PIÑON,sin_cobertura
+MAGDALENA,EL RETEN,sin_contraentrega
+MAGDALENA,NUEVA GRANADA,sin_cobertura
+MAGDALENA,PIJIÑO DEL CARMEN,sin_contraentrega
+MAGDALENA,PUEBLOVIEJO,sin_contraentrega
+MAGDALENA,SAN ZENON,sin_contraentrega
+MAGDALENA,SANTA BARBARA DE PINTO,sin_contraentrega
+MAGDALENA,ZAPAYAN,sin_contraentrega
+MAGDALENA,ZONA BANANERA,sin_cobertura
+NARIÑO,CUASPUD,sin_contraentrega
+NARIÑO,EL CHARCO,sin_contraentrega
+NARIÑO,FRANCISCO PIZARRO,sin_contraentrega
+NARIÑO,LA TOLA,sin_contraentrega
+NARIÑO,LOS ANDES,sin_cobertura
+NARIÑO,MAGÜI,sin_contraentrega
+NARIÑO,MOSQUERA,sin_contraentrega
+NARIÑO,OLAYA HERRERA,sin_contraentrega
+NARIÑO,ROBERTO PAYAN,sin_contraentrega
+NARIÑO,SANTA BARBARA,sin_contraentrega
+PUTUMAYO,LEGUIZAMO,sin_contraentrega
+SANTANDER,CEPITA,sin_contraentrega
+SANTANDER,ENCINO,sin_contraentrega
+SUCRE,EL ROBLE,sin_contraentrega
+VALLE DEL CAUCA,LA VICTORIA,sin_contraentrega
+VAUPES,CARURU,codigo_no_existe
+VAUPES,MITU,sin_contraentrega
+VAUPES,PACOA,codigo_no_existe
+VAUPES,PAPUNAUA,codigo_no_existe
+VAUPES,TARAIRA,codigo_no_existe
+VAUPES,YAVARATE,codigo_no_existe

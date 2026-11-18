@@ -46,8 +46,8 @@ func TestPostalCodeWithDepartmentLine(t *testing.T) {
 
 func TestInterrapidisimoCoverage(t *testing.T) {
 	cases := []struct{ city, dept, want string }{
-		{"Nuquí", "Chocó", CoverageNoCOD},
-		{"Nuqui", "", CoverageNoCOD},
+		{"Margarita", "Bolívar", CoverageNoCOD},
+		{"Nuqui", "", CoverageNone},
 		{"Riosucio", "Chocó", CoverageNone},
 		{"Quibdó", "Chocó", ""},
 		{"Tad", "", ""},

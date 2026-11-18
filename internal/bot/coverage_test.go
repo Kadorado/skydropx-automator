@@ -8,8 +8,8 @@ import (
 )
 
 func TestCarrierWarnings(t *testing.T) {
-	nuqui := domain.ShipmentData{City: "Nuqui", Department: "Chocó"}
-	if w := carrierOpsWarning(nuqui); !strings.Contains(w, "no hace contraentrega en <b>Nuqui</b>") {
+	margarita := domain.ShipmentData{City: "Margarita", Department: "Bolívar"}
+	if w := carrierOpsWarning(margarita); !strings.Contains(w, "no hace contraentrega en <b>Margarita</b>") {
 		t.Fatalf("ops warning: %q", w)
 	}
 	if w := carrierSellerWarning(domain.ShipmentData{City: "Riosucio", Department: "Chocó"}); !strings.Contains(w, "no llega a <b>Riosucio</b>") {
