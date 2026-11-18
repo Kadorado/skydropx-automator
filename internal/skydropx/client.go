@@ -33,11 +33,49 @@ type Client struct {
 }
 
 func NewClient(cfg config.Config) *Client {
-	return &Client{
-		cfg: cfg,
-		httpClient: &http.Client{
-			Timeout: 25 * time.Second,
-		},
+	c := &Client{cfg: cfg}
+	c.httpClient = &http.Client{
+		Timeout:   25 * time.Second,
+		Transport: &tokenRetry{c: c, base: http.DefaultTransport},
+	}
+	return c
+}
+
+// tokenRetry retries once with a new token when Skydropx answers 401: the token can stop working
+// some minutes before the expiry it announced.
+type tokenRetry struct {
+	c    *Client
+	base http.RoundTripper
+}
+
+func (t *tokenRetry) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	auth := req.Header.Get("Authorization")
+	if err != nil || resp.StatusCode != http.StatusUnauthorized || auth == "" || (req.Body != nil && req.GetBody == nil) {
+		return resp, err
+	}
+	t.c.dropToken(strings.TrimPrefix(auth, "Bearer "))
+	token, tokErr := t.c.getAccessToken(req.Context())
+	if tokErr != nil {
+		return resp, nil // keep the original 401
+	}
+	retry := req.Clone(req.Context())
+	if req.GetBody != nil {
+		if retry.Body, err = req.GetBody(); err != nil {
+			return resp, nil
+		}
+	}
+	retry.Header.Set("Authorization", "Bearer "+token)
+	resp.Body.Close()
+	return t.base.RoundTrip(retry)
+}
+
+// dropToken forgets the cached token if it is still the one that failed.
+func (c *Client) dropToken(failed string) {
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+	if c.accessToken == failed {
+		c.accessToken = ""
 	}
 }
 
