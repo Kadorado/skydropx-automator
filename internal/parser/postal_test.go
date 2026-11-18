@@ -24,7 +24,8 @@ func TestPostalCodeFromTable(t *testing.T) {
 		{"Tad", "Tadó", "Chocó", "271070"},
 		{"Condoto", "Condoto", "Chocó", "273030"},   // the old table had 274030
 		{"Itagüí", "Itagüí", "Antioquia", "055412"}, // the one Skydropx accepts
-		{"Bogotá", "Bogotá D.C.", "Bogotá D.C.", "110111"},
+		{"Bogotá", "Bogotá D.C.", "Bogotá D.C.", "110001"},
+		{"Bogotá D.C.", "Bogotá D.C.", "Bogotá D.C.", "110001"},
 		{"La Unión Nariño", "La Union", "Nariño", "521520"},
 		{"La Unión", "La Unión", "", ""}, // exists in several departments
 	}
