@@ -120,6 +120,10 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 			b.paymentCommand(ctx, chatID, text)
 			return
 		}
+		if strings.HasPrefix(text, "/pendientes") {
+			b.pendingCommand(ctx, chatID)
+			return
+		}
 		if strings.HasPrefix(text, "/novedades") {
 			b.issuesCommand(ctx, chatID)
 			return
@@ -177,7 +181,7 @@ func (b *Bot) handle(ctx context.Context, chatID int64, sender, text string) {
 		return
 	}
 	// Commission and summaries are only handled from the ops group.
-	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") ||
+	if strings.HasPrefix(text, "/comision") || strings.HasPrefix(text, "/resumen") || strings.HasPrefix(text, "/novedades") || strings.HasPrefix(text, "/pendientes") ||
 		strings.HasPrefix(text, "/deuda") || strings.HasPrefix(text, "/pago") ||
 		strings.HasPrefix(text, "/publicidad") || strings.HasPrefix(text, "/clientes") || strings.HasPrefix(text, "/autoriza") || strings.HasPrefix(text, "/despachos") ||
 		strings.HasPrefix(text, "/baja") {

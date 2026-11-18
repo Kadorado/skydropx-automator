@@ -97,6 +97,8 @@ type ShipmentMoney struct {
 	Tracking     string             `json:"tracking"`
 	Carrier      string             `json:"carrier"`
 	Customer     string             `json:"customer"`
+	Phone        string             `json:"phone,omitempty"`
+	City         string             `json:"city,omitempty"`
 	Status       string             `json:"status"`        // pending | collected | failed | cancelled | empty
 	LabelCost    float64            `json:"label_cost"`    // label cost according to the shipment (what is added to the customer)
 	Charged      float64            `json:"charged"`       // everything deducted from the credits with this label
@@ -283,7 +285,7 @@ func perShipment(shipments []financeShipment, movs []Movement, extras []ExtraCha
 			status = "cancelled"
 		}
 		row := ShipmentMoney{
-			Date: s.Date, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Status: status,
+			Date: s.Date, Tracking: s.Tracking, Carrier: s.Carrier, Customer: s.Customer, Phone: s.Phone, City: s.City, Status: status,
 			LabelCost: s.Cost, CustomerPays: s.customerPays(), Product: s.Product,
 			Units: s.Units, Commission: s.Commission,
 		}

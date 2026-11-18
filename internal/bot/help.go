@@ -38,6 +38,7 @@ const helpOps = `📌 <b>GESTIÓN — guía rápida</b>
 
 🆘 <b>CLIENTES CON PROBLEMAS</b>
 <blockquote expandable>/novedades — envíos de los últimos 45 días para gestionar: devoluciones, intentos fallidos, en oficina y con novedad. Con teléfono, ciudad y guía
+/pendientes — lo que falta por cobrar (el «⏳ Por cobrar» del resumen), uno por uno: en oficina, con novedad o en camino, con valor y hace cuántos días salió
 <code>/cliente 1234567890</code> — historial por cédula o teléfono: si pagó, si devolvió y si tardó en recoger</blockquote>
 
 📊 <b>RESÚMENES</b>
@@ -141,6 +142,7 @@ var (
 	opsCommands = []telegram.Command{
 		{Command: "despachos", Description: "Guías que faltan por llevar a Interrapidísimo"},
 		{Command: "novedades", Description: "Envíos para gestionar: devoluciones, intentos fallidos, oficina"},
+		{Command: "pendientes", Description: "Lo que falta por cobrar, envío por envío"},
 		{Command: "guia", Description: "Estado de una guía (/guia 240012345678)"},
 		{Command: "cliente", Description: "Historial de un cliente por cédula o teléfono"},
 		{Command: "clientes", Description: "Base de clientes: resumen y archivo para Excel"},
